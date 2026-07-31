@@ -350,7 +350,7 @@ def load_config(
             f"No such configuration file: {env_file}",
             hint=(
                 "Check the --env-file path, or run "
-                f"`{invocation_name()} init` to create one."
+                f"`{invocation_name()} setup` to configure it."
             ),
         )
 
@@ -373,7 +373,7 @@ def load_config(
         raise ConfigError(
             "No configuration found.",
             hint=(
-                f"Run `{invocation_name()} init` to create one, or set NAVIDROME_URL in the "
+                f"Run `{invocation_name()} setup` to configure it, or set NAVIDROME_URL in the "
                 f"environment.\n  Looked in:\n    {locations}"
             ),
         )

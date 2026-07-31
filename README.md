@@ -47,68 +47,60 @@ Deezer's own catalogue is the only metadata source.
   and SQLite.
 - Network access from your Mac to Navidrome, and to `api.deezer.com`.
 
-## Install as a terminal command
-
-Recommended: install with [pipx](https://pipx.pypa.io/), which puts the tool in
-its own isolated environment and the `release-check` command on your `PATH`.
+## Install
 
 ```bash
-brew install pipx && pipx ensurepath
-pipx install --editable /path/to/release_check
+./install.sh
 ```
 
-`--editable` means edits to the source take effect immediately, with no
-reinstall. Drop it if you would rather freeze a copy.
+That builds an isolated environment under `~/.local/share/release-check`, copies
+the application into it, and links the `release-check` command into
+`~/.local/bin`. Nothing is added to your system Python, and **the source
+directory is not needed afterwards** — move it or delete it and the command
+keeps working.
 
-Then run setup — it asks for your Navidrome details, tests the connection, and
-saves only once it works:
+Then:
 
 ```bash
-release-check setup
+release-check setup     # enter your Navidrome details; it tests the connection
+release-check           # list missing releases
 ```
 
-```text
-Configuring release_check
-  Settings file: /Users/you/.config/release_check/.env
-  Press Enter to keep the current value.
-
-  Navidrome URL [http://your-server:4533]:
-  Username: branden
-  Password:
-
-  Testing connection...
-  ✓ Connected to navidrome 0.62.0
-```
-
-Then just:
+Re-run `./install.sh` any time to upgrade in place. To remove it:
 
 ```bash
-release-check
+./install.sh --uninstall
 ```
 
-Restart your shell after `pipx ensurepath` if `release-check` is not found.
+Settings and cache are left alone by `--uninstall`; it tells you how to remove
+those too if you want a complete wipe.
+
+If `~/.local/bin` is not on your `PATH`, the installer says so and prints the
+one line to add.
 
 <details>
-<summary>Alternatives to pipx</summary>
+<summary>Running from the source directory instead</summary>
 
-**A plain venv**, if you would rather not install pipx:
-
-```bash
-python3 -m venv ~/.venvs/release-check
-~/.venvs/release-check/bin/pip install /path/to/release_check
-ln -s ~/.venvs/release-check/bin/release-check ~/.local/bin/release-check
-```
-
-**No install at all** — run it straight from the checkout. Configuration is
-then read from `.env` in that directory:
+No install needed — `python3 release_check.py` takes exactly the same
+arguments, and reads `.env` from the project directory if one is there.
 
 ```bash
-cd /path/to/release_check
 python3 release_check.py setup
 python3 release_check.py
 ```
 
 </details>
+
+## Where things live
+
+| | |
+|---|---|
+| Application | `~/.local/share/release-check/` |
+| Command | `~/.local/bin/release-check` |
+| Settings | `~/.config/release_check/.env` (mode 600) |
+| Cache and mappings | `~/.local/state/release_check/state.sqlite3` |
+
+All absolute, so it behaves the same from any directory.
 
 ### Changing settings later
 
@@ -154,10 +146,9 @@ Settings are read from the first source that has them:
 3. `./.env` in the current directory
 4. `~/.config/release_check/.env`
 
-So a checkout with its own `.env` keeps working, while the installed command
-finds your config from anywhere. When nothing is found, the error lists every
-location it searched. Environment variables win over the file, and both `setup`
-and `config set` warn you when one is shadowing what you just saved.
+When nothing is found, the error lists every location it searched. Environment
+variables win over the file, and both `setup` and `config set` warn you when one
+is shadowing what you just saved.
 
 ### Checking the connection
 
@@ -457,7 +448,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-389 tests, no network access, no real credentials, both APIs mocked. They cover
+392 tests, no network access, no real credentials, both APIs mocked. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version
 detection, duplicate collapsing, ambiguous artist results, manual mappings,

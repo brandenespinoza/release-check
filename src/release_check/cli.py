@@ -96,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Run with no arguments to perform a normal scan. Configuration is read "
             "from the environment, then ./.env, then ~/.config/release_check/.env. "
-            "Run `release-check init` to create one."
+            "Run `release-check setup` to configure it."
         ),
     )
     parser.add_argument("--version", action="version", version=f"release_check {__version__}")

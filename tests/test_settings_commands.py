@@ -188,3 +188,32 @@ class TestSetupCommand:
 
         assert "init" not in SUBCOMMANDS
         assert {"setup", "config"} <= SUBCOMMANDS
+
+
+class TestHintsNameRealCommands:
+    """A fresh install's first message must not point at a removed command."""
+
+    def test_no_config_hint_points_at_setup(self, cfg, capsys):
+        assert main(["check"]) == ExitCode.CONFIG
+        hint = capsys.readouterr().err
+        assert "setup" in hint
+        assert "init" not in hint, "`init` was replaced by `setup`"
+
+    def test_missing_env_file_hint_points_at_setup(self, cfg, capsys, tmp_path):
+        assert main(["check", "--env-file", str(tmp_path / "nope.env")]) == ExitCode.CONFIG
+        hint = capsys.readouterr().err
+        assert "setup" in hint
+        assert "init" not in hint
+
+    def test_every_command_named_in_a_hint_exists(self, cfg, capsys):
+        import re
+
+        from release_check.cli import SUBCOMMANDS
+
+        main(["check"])
+        main(["config", "list"])
+        text = capsys.readouterr()
+        blob = text.out + text.err
+        # Pull `release-check <word>` style references out of the guidance.
+        for match in re.finditer(r"release-check ([a-z-]+)", blob):
+            assert match.group(1) in SUBCOMMANDS, f"hint names unknown command {match.group(1)!r}"

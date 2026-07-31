@@ -278,7 +278,7 @@ class TestEnvFileDiscovery:
         with pytest.raises(ConfigError) as excinfo:
             load_config(environ={"RELEASE_CHECK_CONFIG_DIR": str(tmp_path / "cfg")})
         hint = excinfo.value.hint or ""
-        assert "release-check init" in hint
+        assert "release-check setup" in hint
         assert str(tmp_path / ".env") in hint
         assert str(tmp_path / "cfg" / ".env") in hint
 

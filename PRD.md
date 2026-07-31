@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 389 automated tests, no runtime dependencies.
+Status: complete and working. 392 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -136,9 +136,18 @@ and is never interactive.
 
 ## Installation
 
-The package declares a `release-check` console script, so `pipx install` (or a
-venv plus a symlink) makes it a normal terminal command available from any
-directory. Running from a checkout with `python3 release_check.py` or
+`./install.sh` builds a virtual environment under
+`~/.local/share/release-check`, installs the package into it **non-editably**,
+and links the console script into `~/.local/bin`. The non-editable install is
+deliberate: the application is copied, so the source directory can be moved or
+deleted without breaking the installed command.
+
+The script is idempotent — it rebuilds the environment from scratch on each run
+so an upgrade cannot inherit stale state — checks for Python 3.10+, and reports
+when `~/.local/bin` is absent from `PATH`. `--uninstall` removes the
+application and launcher while leaving user settings and cache in place.
+
+Running from a checkout with `python3 release_check.py` or
 `python3 -m release_check` remains equivalent.
 
 Because an installed command runs from arbitrary working directories,
