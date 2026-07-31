@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .models import (
+    DECISION_MISSING,
+    DECISION_OWNED,
     DeezerRelease,
     LocalAlbum,
     LocalArtist,
@@ -142,11 +144,18 @@ def determine_ownership(
     release: DeezerRelease,
     index: LocalIndex,
     release_type: ReleaseType,
-    ignored_ids: set[str] | None = None,
+    decisions: dict[str, str] | None = None,
 ) -> Verdict:
-    """Classify one Deezer release against the local library."""
-    if ignored_ids and release.id in ignored_ids:
-        return Verdict(Ownership.IGNORED, "ignored by user")
+    """Classify one Deezer release against the local library.
+
+    A decision the user recorded in the review workflow wins outright: the
+    point of reviewing something is not to be asked about it again.
+    """
+    decision = (decisions or {}).get(release.id)
+    if decision == DECISION_OWNED:
+        return Verdict(Ownership.IGNORED, "you marked this as already owned")
+    if decision == DECISION_MISSING:
+        return Verdict(Ownership.MISSING, "you marked this as missing")
 
     parsed = parse_title(release.title)
     if not parsed.base:

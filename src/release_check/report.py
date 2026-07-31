@@ -214,6 +214,7 @@ def print_review(items: list[ReviewItem], stream=sys.stderr) -> None:
             f"[{item.release_type.value}, {item.release.release_date}]: {item.reason}",
             file=stream,
         )
+    print(f"\n  Decide on these with: {invocation_name()} review", file=stream)
 
 
 def print_unresolved(items: list[UnresolvedArtist], stream=sys.stderr) -> None:

@@ -24,6 +24,10 @@ class Ownership(str, Enum):
     IGNORED = "ignored"
 
 
+#: A decision the user recorded about an ambiguous release.
+DECISION_OWNED = "owned"
+DECISION_MISSING = "missing"
+
 #: Only these appear in the main terminal list.
 REPORTABLE = (Ownership.MISSING, Ownership.PROBABLY_MISSING)
 

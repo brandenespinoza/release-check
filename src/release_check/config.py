@@ -7,6 +7,7 @@ effect. Only non-secret values are ever echoed back to the user.
 from __future__ import annotations
 
 import os
+import re
 import stat
 import sys
 import tempfile
@@ -19,7 +20,6 @@ from .secrets import Secret, registry
 
 DEFAULT_TIMEOUT = 20.0
 DEFAULT_CACHE_MAX_AGE_HOURS = 24.0
-DEFAULT_WORKERS = 4
 USER_AGENT = "release-check/1.0 (+local personal library tool)"
 
 
@@ -105,7 +105,11 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("timeout", "REQUEST_TIMEOUT_SECONDS", "Request timeout in seconds", default="20"),
     Setting("cache-path", "CACHE_PATH", "Where local state is kept"),
     Setting("cache-max-age", "CACHE_MAX_AGE_HOURS", "Cache lifetime in hours", default="24"),
-    Setting("workers", "WORKERS", "Parallel Navidrome track fetches", default="4"),
+    Setting(
+        "types",
+        "RELEASE_TYPES",
+        "Release types to report, comma separated (album, ep, single)",
+    ),
 )
 
 SETTINGS_BY_KEY = {s.key: s for s in SETTINGS}
@@ -212,7 +216,7 @@ class Config:
     request_timeout: float = DEFAULT_TIMEOUT
     cache_path: Path = field(default_factory=lambda: default_state_dir() / "state.sqlite3")
     cache_max_age_hours: float = DEFAULT_CACHE_MAX_AGE_HOURS
-    workers: int = DEFAULT_WORKERS
+    release_types: frozenset[str] = frozenset()
     verify_tls: bool = True
 
     @property
@@ -233,16 +237,35 @@ def _parse_float(raw: str | None, default: float, name: str) -> float:
     return value
 
 
-def _parse_int(raw: str | None, default: int, name: str, maximum: int) -> int:
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        raise ConfigError(f"{name} must be a whole number, got {raw!r}") from None
-    if not 1 <= value <= maximum:
-        raise ConfigError(f"{name} must be between 1 and {maximum}, got {value}")
-    return value
+#: Accepted spellings for the `types` setting and the --type flag.
+RELEASE_TYPE_ALIASES = {
+    "album": "Album",
+    "albums": "Album",
+    "ep": "EP",
+    "eps": "EP",
+    "single": "Single",
+    "singles": "Single",
+    "unknown": "Unknown",
+    "unclassified": "Unknown",
+}
+
+
+def parse_release_types(raw: str | None) -> frozenset[str]:
+    """Parse "album,ep" into canonical type names. Empty means every type."""
+    if not raw or not raw.strip():
+        return frozenset()
+    names = set()
+    for token in re.split(r"[,\s]+", raw.strip()):
+        if not token:
+            continue
+        canonical = RELEASE_TYPE_ALIASES.get(token.casefold())
+        if canonical is None:
+            valid = ", ".join(sorted({v.lower() for v in RELEASE_TYPE_ALIASES.values()}))
+            raise ConfigError(
+                f"Unknown release type {token!r}.", hint=f"Valid types: {valid}"
+            )
+        names.add(canonical)
+    return frozenset(names)
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -413,7 +436,7 @@ def load_config(
             DEFAULT_CACHE_MAX_AGE_HOURS,
             "CACHE_MAX_AGE_HOURS",
         ),
-        workers=_parse_int(get("WORKERS"), DEFAULT_WORKERS, "WORKERS", maximum=16),
+        release_types=parse_release_types(get("RELEASE_TYPES")),
     )
 
     # Register the password so the logging filter can scrub it.

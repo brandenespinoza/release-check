@@ -100,10 +100,48 @@ class TestMappings:
         assert store.delete_mapping("Nobody") is False
 
 
-class TestIgnoredReleases:
-    def test_roundtrip(self, store):
-        store.ignore_release("123", "duplicate")
-        assert "123" in store.ignored_release_ids()
+class TestReleaseDecisions:
+    """The review section has to be actionable, or it repeats forever."""
+
+    def test_owned_decision_roundtrip(self, store):
+        from release_check.models import DECISION_OWNED
+
+        store.set_release_decision("123", DECISION_OWNED, "have it")
+        assert store.release_decisions() == {"123": DECISION_OWNED}
+
+    def test_missing_decision_roundtrip(self, store):
+        from release_check.models import DECISION_MISSING
+
+        store.set_release_decision("456", DECISION_MISSING)
+        assert store.release_decisions() == {"456": DECISION_MISSING}
+
+    def test_decision_can_be_changed(self, store):
+        from release_check.models import DECISION_MISSING, DECISION_OWNED
+
+        store.set_release_decision("1", DECISION_OWNED)
+        store.set_release_decision("1", DECISION_MISSING)
+        assert store.release_decisions() == {"1": DECISION_MISSING}
+
+    def test_decision_can_be_cleared(self, store):
+        from release_check.models import DECISION_OWNED
+
+        store.set_release_decision("1", DECISION_OWNED)
+        assert store.clear_release_decision("1") is True
+        assert store.release_decisions() == {}
+
+    def test_unknown_decision_is_rejected(self, store):
+        import pytest
+
+        with pytest.raises(ValueError):
+            store.set_release_decision("1", "maybe")
+
+    def test_reset(self, store):
+        from release_check.models import DECISION_OWNED
+
+        store.set_release_decision("1", DECISION_OWNED)
+        store.set_release_decision("2", DECISION_OWNED)
+        assert store.reset_release_decisions() == 2
+        assert store.count_release_decisions() == 0
 
 
 class TestPersistence:

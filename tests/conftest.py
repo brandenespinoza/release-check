@@ -73,7 +73,6 @@ def config(tmp_path: Path) -> Config:
         request_timeout=5.0,
         cache_path=tmp_path / "state.sqlite3",
         cache_max_age_hours=24.0,
-        workers=1,
     )
 
 

@@ -34,6 +34,7 @@ from .normalize import fold
 from .release_match import (
     IsrcIndex,
     LocalIndex,
+    Verdict,
     determine_ownership,
     refine_with_isrc,
 )
@@ -54,6 +55,52 @@ class ScanOptions:
     since_year: int | None = None
     types: set[ReleaseType] | None = None
     progress: bool = True
+
+
+@dataclass
+class Judged:
+    """One release plus the verdict reached about it.
+
+    Carrying the verdict alongside the release is what lets a single pass over
+    the discography serve both the report and the ISRC cross-check.
+    """
+
+    release: DeezerRelease
+    release_type: ReleaseType
+    verdict: Verdict
+    traits: tuple[str, ...]
+
+    @classmethod
+    def evaluate(
+        cls, release: DeezerRelease, index: LocalIndex, decisions: dict[str, str]
+    ) -> Judged:
+        release_type, classification = resolve_type(release)
+        return cls(
+            release=release,
+            release_type=release_type,
+            verdict=determine_ownership(release, index, release_type, decisions),
+            traits=tuple(sorted(classification.traits)),
+        )
+
+    def rejudge(self, index: LocalIndex, decisions: dict[str, str]) -> None:
+        """Re-evaluate after release detail has been fetched."""
+        self.release_type, classification = resolve_type(self.release)
+        self.verdict = determine_ownership(
+            self.release, index, self.release_type, decisions
+        )
+        self.traits = tuple(sorted(classification.traits))
+
+    @property
+    def is_owned(self) -> bool:
+        return self.verdict.ownership in (
+            Ownership.OWNED,
+            Ownership.PROBABLY_OWNED,
+            Ownership.IGNORED,
+        )
+
+    @property
+    def is_single(self) -> bool:
+        return self.release_type is ReleaseType.SINGLE
 
 
 @dataclass
@@ -168,7 +215,7 @@ class Scanner:
         if not pending:
             return 0
 
-        failures = self.client.load_tracks(pending, workers=self.config.workers)
+        failures = self.client.load_tracks(pending)
         for album in pending:
             if album.tracks_loaded:
                 self.store.set_local_tracks(
@@ -210,6 +257,20 @@ class Scanner:
         self._clear_progress(options)
 
         result.missing = dedupe_results(result.missing, lambda item: item.release_type)
+        self.store.save_review(
+            [
+                {
+                    "id": item.release.id,
+                    "artist": item.local_artist,
+                    "title": item.release.title,
+                    "type": item.release_type.value,
+                    "date": str(item.release.release_date),
+                    "reason": item.reason,
+                    "url": item.release.link,
+                }
+                for item in result.review
+            ]
+        )
         self.store.save_unresolved(
             [
                 {
@@ -267,102 +328,90 @@ class Scanner:
         if not canonical:
             return
 
-        ignored_ids = self.store.ignored_release_ids()
-        index = LocalIndex(artist)
+        decisions = self.store.release_decisions()
 
-        # First pass on listing data alone: cheap, and settles anything that
-        # clearly matches an owned album.
-        candidates: list[DeezerRelease] = []
-        for release in canonical:
-            release_type, _ = resolve_type(release)
-            verdict = determine_ownership(release, index, release_type, ignored_ids)
-            if verdict.ownership in (Ownership.OWNED, Ownership.PROBABLY_OWNED, Ownership.IGNORED):
-                continue
-            candidates.append(release)
-
+        # Pass one, on listing data alone. Cheap, and it settles anything that
+        # clearly matches an owned album. The verdicts are kept rather than
+        # discarded, so the ISRC step below can reuse them instead of
+        # recomputing ownership for the whole discography a second time.
+        # LocalIndex here holds album titles only; tracks are not loaded yet.
+        settled = self._judge_all(canonical, LocalIndex(artist), decisions)
+        candidates = [j for j in settled if not j.is_owned]
         if not candidates:
             return
 
-        # Local tracks are only needed once something looks missing.
+        # Local tracks are only worth fetching once something looks missing.
         track_failures = self.load_local_tracks(artist)
         if track_failures:
             result.partial_reasons.append(
                 f"{track_failures} album(s) of {artist.name} could not be read"
             )
+
+        # Rebuilt deliberately: the index above had no track data, and
+        # recording-level comparison needs it.
         index = LocalIndex(artist)
 
-        judged: list[tuple[DeezerRelease, ReleaseType, object, tuple[str, ...]]] = []
-        owned_albums: list[DeezerRelease] = []
-
-        for release in candidates:
+        for judged in candidates:
             try:
-                self.provider.load_release_detail(release)
+                self.provider.load_release_detail(judged.release)
             except ReleaseCheckError as exc:
-                log.debug("No detail for %r: %s", release.title, exc)
-            release_type, classification = resolve_type(release)
-            verdict = determine_ownership(release, index, release_type, ignored_ids)
-            judged.append(
-                (release, release_type, verdict, tuple(sorted(classification.traits)))
-            )
+                log.debug("No detail for %r: %s", judged.release.title, exc)
+            judged.rejudge(index, decisions)
 
-        # Re-check the releases the first pass considered owned, so their
-        # ISRCs can vouch for advance singles.
-        needs_isrc = any(
-            v.reportable and t is ReleaseType.SINGLE for _, t, v, _traits in judged
-        )
-        if needs_isrc:
-            owned_albums = self._isrc_reference_albums(canonical, index, ignored_ids)
+        self._apply_isrc_evidence(candidates, settled, index)
 
+        for judged in candidates:
+            if options.types and judged.release_type not in options.types:
+                continue
+            self._record(judged, artist.name, result)
+
+    def _judge_all(
+        self, releases: list[DeezerRelease], index: LocalIndex, decisions: dict[str, str]
+    ) -> list[Judged]:
+        return [Judged.evaluate(r, index, decisions) for r in releases]
+
+    def _apply_isrc_evidence(
+        self, candidates: list[Judged], settled: list[Judged], index: LocalIndex
+    ) -> None:
+        """Let owned albums vouch for singles that look like advance releases."""
+        if not any(j.verdict.reportable and j.is_single for j in candidates):
+            return
+
+        owned_albums = [j for j in settled if j.is_owned and not j.is_single]
         isrc_index = IsrcIndex()
-        for album in owned_albums:
-            isrc_index.add_release(album)
-
-        for release, release_type, verdict, traits in judged:
-            if release_type is ReleaseType.SINGLE and isrc_index.codes:
-                verdict = refine_with_isrc(verdict, release, isrc_index)
-
-            if options.types and release_type not in options.types:
-                continue
-
-            if verdict.ownership is Ownership.AMBIGUOUS:
-                result.review.append(
-                    ReviewItem(release, artist.name, release_type, verdict.reason)
-                )
-            elif verdict.reportable:
-                result.missing.append(
-                    MissingRelease(
-                        release=release,
-                        local_artist=artist.name,
-                        release_type=release_type,
-                        ownership=verdict.ownership,
-                        reason=verdict.reason,
-                        traits=traits,
-                    )
-                )
-
-    def _isrc_reference_albums(
-        self,
-        canonical: list[DeezerRelease],
-        index: LocalIndex,
-        ignored_ids: set[str],
-    ) -> list[DeezerRelease]:
-        """Fetch detail for a few owned albums to harvest their ISRCs."""
-        owned: list[DeezerRelease] = []
-        for release in canonical:
-            if len(owned) >= MAX_ISRC_REFERENCE_ALBUMS:
-                break
-            release_type, _ = resolve_type(release)
-            if release_type is ReleaseType.SINGLE:
-                continue
-            verdict = determine_ownership(release, index, release_type, ignored_ids)
-            if verdict.ownership not in (Ownership.OWNED, Ownership.PROBABLY_OWNED):
-                continue
+        for judged in owned_albums[:MAX_ISRC_REFERENCE_ALBUMS]:
             try:
-                self.provider.load_release_detail(release)
+                self.provider.load_release_detail(judged.release)
             except ReleaseCheckError:
                 continue
-            owned.append(release)
-        return owned
+            isrc_index.add_release(judged.release)
+
+        if not isrc_index.codes:
+            return
+        for judged in candidates:
+            if judged.is_single:
+                judged.verdict = refine_with_isrc(
+                    judged.verdict, judged.release, isrc_index
+                )
+
+    def _record(self, judged: Judged, artist_name: str, result: ScanResult) -> None:
+        if judged.verdict.ownership is Ownership.AMBIGUOUS:
+            result.review.append(
+                ReviewItem(
+                    judged.release, artist_name, judged.release_type, judged.verdict.reason
+                )
+            )
+        elif judged.verdict.reportable:
+            result.missing.append(
+                MissingRelease(
+                    release=judged.release,
+                    local_artist=artist_name,
+                    release_type=judged.release_type,
+                    ownership=judged.verdict.ownership,
+                    reason=judged.verdict.reason,
+                    traits=judged.traits,
+                )
+            )
 
     # --- progress ----------------------------------------------------------
 

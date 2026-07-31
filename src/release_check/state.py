@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .models import DECISION_MISSING, DECISION_OWNED
 from .normalize import artist_key
 
 log = logging.getLogger("release_check.state")
@@ -46,8 +47,11 @@ CREATE TABLE IF NOT EXISTS artist_mapping_target (
     position    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (local_key, deezer_id)
 );
-CREATE TABLE IF NOT EXISTS ignored_release (
+-- A decision the user made about one ambiguous release, so the review
+-- section does not ask the same question on every run.
+CREATE TABLE IF NOT EXISTS release_decision (
     deezer_id  TEXT PRIMARY KEY,
+    decision   TEXT NOT NULL,
     note       TEXT,
     created_at REAL NOT NULL
 );
@@ -75,7 +79,7 @@ STATUS_CONFIRMED = "confirmed"
 STATUS_IGNORED = "ignored"
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -242,6 +246,20 @@ class Store:
             ).fetchone()
             current = int(row["value"]) if row else 1
 
+            if current < 3:
+                # v2 had `ignored_release`, which could only express "owned".
+                have = self._conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='ignored_release'"
+                ).fetchone()
+                if have:
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO release_decision"
+                        "(deezer_id, decision, note, created_at) "
+                        "SELECT deezer_id, ?, note, created_at FROM ignored_release",
+                        (DECISION_OWNED,),
+                    )
+
             if current < 2:
                 self._conn.execute(
                     "INSERT OR IGNORE INTO artist_mapping_target"
@@ -374,19 +392,60 @@ class Store:
 
     # --- ignored releases --------------------------------------------------
 
-    def ignore_release(self, deezer_id: str, note: str = "") -> None:
+    def set_release_decision(self, deezer_id: str, decision: str, note: str = "") -> None:
+        """Record what the user said about an ambiguous release."""
+        if decision not in (DECISION_OWNED, DECISION_MISSING):
+            raise ValueError(f"unknown decision {decision!r}")
         with self._lock:
             self._conn.execute(
-                "INSERT OR REPLACE INTO ignored_release(deezer_id, note, created_at) "
-                "VALUES(?,?,?)",
-                (str(deezer_id), note, time.time()),
+                "INSERT OR REPLACE INTO release_decision"
+                "(deezer_id, decision, note, created_at) VALUES(?,?,?,?)",
+                (str(deezer_id), decision, note, time.time()),
             )
             self._conn.commit()
 
-    def ignored_release_ids(self) -> set[str]:
+    def clear_release_decision(self, deezer_id: str) -> bool:
         with self._lock:
-            rows = self._conn.execute("SELECT deezer_id FROM ignored_release").fetchall()
-        return {r["deezer_id"] for r in rows}
+            cursor = self._conn.execute(
+                "DELETE FROM release_decision WHERE deezer_id = ?", (str(deezer_id),)
+            )
+            self._conn.commit()
+            return cursor.rowcount > 0
+
+    def release_decisions(self) -> dict[str, str]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT deezer_id, decision FROM release_decision"
+            ).fetchall()
+        return {r["deezer_id"]: r["decision"] for r in rows}
+
+    def count_release_decisions(self) -> int:
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) c FROM release_decision").fetchone()
+        return int(row["c"])
+
+    def reset_release_decisions(self) -> int:
+        with self._lock:
+            cursor = self._conn.execute("DELETE FROM release_decision")
+            self._conn.commit()
+            return cursor.rowcount
+
+    # --- review queue ------------------------------------------------------
+
+    def save_review(self, entries: list[dict]) -> None:
+        self.set("__review__", entries)
+
+    def load_review(self) -> list[dict]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload FROM cache WHERE key = ?", ("__review__",)
+            ).fetchone()
+        if row is None:
+            return []
+        try:
+            return json.loads(row["payload"])
+        except ValueError:
+            return []
 
     # --- unresolved artists (persisted for the `artists` command) ----------
 

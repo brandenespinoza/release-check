@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 392 automated tests, no runtime dependencies.
+Status: complete and working. 416 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -119,6 +119,7 @@ name.
 | `config` | `list`, `set`, `unset`, `password`, `path` |
 | `check` | Validate connectivity and credentials, then exit |
 | `resolve` | Work through unresolved artists interactively |
+| `review` | Decide on ambiguous releases so they stop recurring |
 | `artists` | Show unresolved artists from the last scan; `--mappings` lists saved mappings |
 | `map <local> <id>...` | Pin a local artist to one or more Deezer artists |
 | `unmap <local>` | Clear everything known about an artist, back to unresolved |
@@ -127,6 +128,12 @@ name.
 
 Scan flags: `--artist NAME` (repeatable), `--limit N`, `--since YEAR`,
 `--type TYPE` (repeatable), `--flat`, `--refresh`, `--no-progress`.
+
+`types` may be set persistently so the default output matches how the user
+collects; an explicit `--type` overrides it. Concurrency is not configurable:
+Navidrome track fetching is threaded at a fixed width, and the dominant cost —
+Deezer — is rate-limited and necessarily serial, so a worker knob would promise
+a speed-up the architecture cannot deliver.
 
 Global flags, accepted before or after the subcommand: `-v` / `-vv`,
 `--env-file PATH`.
@@ -205,7 +212,7 @@ Optional, with defaults:
 REQUEST_TIMEOUT_SECONDS=20
 CACHE_PATH=~/.local/state/release_check/state.sqlite3
 CACHE_MAX_AGE_HOURS=24
-WORKERS=4                        # Navidrome track fetches only
+RELEASE_TYPES=                   # e.g. album,ep — empty means every type
 ```
 
 `NAVIDROME_URL` is the base URL; `/rest` is appended internally, and a URL that
@@ -419,6 +426,12 @@ Every release resolves to one of: **owned**, **probably owned**, **missing**,
 Only *missing* and *probably missing* appear in the main list. *Ambiguous* goes
 to a separate review section on stderr and is never silently treated as missing.
 **(Invariant.)**
+
+An ambiguous release is a question, so it must be answerable. `review` walks the
+ambiguous releases from the last scan and records a decision — owned or missing
+— against the Deezer release ID. A stored decision short-circuits ownership
+determination on the next scan, so the same question is never asked twice.
+Without this the review section is write-only and grows without bound.
 
 Two independent lines of evidence are used.
 

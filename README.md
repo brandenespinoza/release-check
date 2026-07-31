@@ -133,7 +133,24 @@ your shell history and be visible to `ps`. `config password` prompts for it
 instead. Everything is stored in a plain, hand-editable file at mode 600.
 
 Settings are: `url`, `username`, `password`, `timeout`, `cache-path`,
-`cache-max-age`, `workers`.
+`cache-max-age`, `types`.
+
+### Only care about albums?
+
+If you collect complete albums rather than singles, set that once:
+
+```bash
+release-check config set types album,ep
+```
+
+Every run then reports only those, without repeating `--type` forever. An
+explicit `--type` on the command line still wins. Unset it to see everything
+again:
+
+```bash
+release-check config unset types
+```
+
 
 `NAVIDROME_URL` is the base URL only — `/rest` is appended for you. Any host,
 port or path works; `your-server` is resolved through Tailscale exactly as your
@@ -305,6 +322,30 @@ release-check artists --mappings               # list what is saved
 Mappings persist between runs and always win over automatic matching. A normal
 scan is never interactive.
 
+### Deciding on ambiguous releases
+
+Releases the matcher cannot settle go to a review section rather than being
+claimed as missing. Answer them once:
+
+```bash
+release-check review
+```
+
+```text
+─── 1/5 ───
+Alabama — American Christmas
+  Album, 2017-10-06
+  title closely resembles local album 'Christmas' but is not identical
+  https://www.deezer.com/album/558123
+  [o] I own it   [m] I don't, report it   [s]kip   [u]ndo   [q]uit
+```
+
+`o` suppresses it for good, `m` promotes it into the main list, `s` leaves it
+undecided, `u` clears a decision you made earlier. Decisions are stored against
+the Deezer release ID, so the same question is never asked twice.
+
+`release-check cache --reset-decisions` forgets all of them.
+
 ## How matching works
 
 **Artists.** Names are compared after folding case, accents, apostrophe styles,
@@ -448,7 +489,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-392 tests, no network access, no real credentials, both APIs mocked. They cover
+416 tests, no network access, no real credentials, both APIs mocked. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version
 detection, duplicate collapsing, ambiguous artist results, manual mappings,

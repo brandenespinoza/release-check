@@ -174,7 +174,7 @@ def _save(target: Path, url: str, username: str, password: str, resolved: dict) 
         SETTINGS_BY_KEY["password"].env_var: password,
     }
     # Carry through any optional settings already present in the file.
-    for key in ("timeout", "cache-path", "cache-max-age", "workers"):
+    for key in ("timeout", "cache-path", "cache-max-age", "types"):
         entry = resolved.get(key)
         if entry is not None and entry.value and entry.source not in ("default", "environment"):
             values[entry.setting.env_var] = entry.value

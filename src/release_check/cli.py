@@ -48,8 +48,8 @@ from .state import MappingTarget, Store
 log = logging.getLogger("release_check.cli")
 
 SUBCOMMANDS = {
-    "scan", "setup", "config", "check", "resolve", "artists", "map", "unmap",
-    "ignore", "cache",
+    "scan", "setup", "config", "check", "resolve", "review", "artists", "map",
+    "unmap", "ignore", "cache",
 }
 
 _TYPE_ALIASES = {
@@ -169,6 +169,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser(
+        "review",
+        parents=[common],
+        help="decide on ambiguous releases so they stop being reported",
+    )
+
+    sub.add_parser(
         "resolve",
         parents=[common],
         help="work through unresolved artists interactively",
@@ -210,6 +216,11 @@ def build_parser() -> argparse.ArgumentParser:
     cache.add_argument("--clear", action="store_true", help="delete cached API responses")
     cache.add_argument(
         "--reset-mappings", action="store_true", help="delete all artist mappings"
+    )
+    cache.add_argument(
+        "--reset-decisions",
+        action="store_true",
+        help="forget every review decision",
     )
 
     return parser
@@ -273,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_check(args)
         if command == "resolve":
             return cmd_resolve(args)
+        if command == "review":
+            return cmd_review(args)
         if command == "artists":
             return cmd_artists(args)
         if command == "map":
@@ -305,7 +318,12 @@ def _open_store(config: Config) -> Store:
 def cmd_scan(args) -> int:
     config = load_config(env_file=args.env_file)
 
-    types = {_TYPE_ALIASES[t] for t in args.type} or None
+    if args.type:
+        types = {_TYPE_ALIASES[t] for t in args.type}
+    elif config.release_types:
+        types = {t for t in ReleaseType if t.value in config.release_types}
+    else:
+        types = None
     options = ScanOptions(
         artist_filters=args.artist,
         limit=args.limit,
@@ -455,6 +473,14 @@ def cmd_check(args) -> int:
     return ExitCode.OK
 
 
+def cmd_review(args) -> int:
+    from .review_ui import run_review
+
+    config = load_config(env_file=args.env_file)
+    with _open_store(config) as store:
+        return run_review(store)
+
+
 def cmd_resolve(args) -> int:
     from .resolve_ui import run_resolve
 
@@ -558,11 +584,17 @@ def cmd_cache(args) -> int:
         if args.reset_mappings:
             count = store.reset_mappings()
             print(f"Removed {count} artist mapping(s).")
-        if not args.clear and not args.reset_mappings:
+        if getattr(args, "reset_decisions", False):
+            count = store.reset_release_decisions()
+            print(f"Removed {count} review decision(s).")
+        if not args.clear and not args.reset_mappings and not getattr(
+            args, "reset_decisions", False
+        ):
             age = store.cache_age_hours()
             stats = store.cache_stats()
             print(f"State file: {config.cache_path}")
             print(f"Mappings:   {len(store.list_mappings())}")
+            print(f"Decisions:  {store.count_release_decisions()}")
             print(
                 "Cache age:  "
                 + (f"{age:.1f}h" if age is not None else "empty")

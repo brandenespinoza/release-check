@@ -29,6 +29,11 @@ from .models import LocalAlbum, LocalArtist, LocalTrack
 
 log = logging.getLogger("release_check.navidrome")
 
+#: Concurrent album-track fetches. Not user-configurable: Navidrome sits on
+#: the local network and is never the bottleneck, so exposing a knob here
+#: would promise a speed-up the rate-limited Deezer half cannot deliver.
+TRACK_FETCH_WORKERS = 4
+
 API_VERSION = "1.16.1"
 CLIENT_NAME = "release-check"
 
@@ -187,7 +192,7 @@ class NavidromeClient:
         album = body.get("album") or {}
         return [_track_from_json(s) for s in (album.get("song") or [])]
 
-    def load_tracks(self, albums: list[LocalAlbum], workers: int | None = None) -> int:
+    def load_tracks(self, albums: list[LocalAlbum], workers: int = TRACK_FETCH_WORKERS) -> int:
         """Populate `tracks` for albums that lack them. Returns failure count.
 
         A failure on one album is logged and skipped so the rest of the scan
@@ -206,7 +211,7 @@ class NavidromeClient:
                 log.warning("Could not read tracks for album %r: %s", album.name, exc)
                 return album, None
 
-        max_workers = max(1, workers or self.config.workers)
+        max_workers = max(1, workers)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             for album, tracks in pool.map(fetch, pending):
                 if tracks is None:

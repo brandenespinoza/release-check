@@ -40,15 +40,15 @@ class TestSaveSettings:
 
     def test_roundtrip(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://your-server:4533", "WORKERS": "8"})
+        save_settings(path, {"NAVIDROME_URL": "http://your-server:4533", "RELEASE_TYPES": "album"})
         values = load_dotenv(path)
         assert values["NAVIDROME_URL"] == "http://your-server:4533"
-        assert values["WORKERS"] == "8"
+        assert values["RELEASE_TYPES"] == "album"
 
     def test_empty_values_are_omitted(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://a:1", "WORKERS": ""})
-        assert "WORKERS" not in load_dotenv(path)
+        save_settings(path, {"NAVIDROME_URL": "http://a:1", "RELEASE_TYPES": ""})
+        assert "RELEASE_TYPES" not in load_dotenv(path)
 
     def test_hand_added_keys_are_preserved(self, tmp_path):
         path = tmp_path / ".env"
@@ -133,16 +133,16 @@ class TestConfigCommand:
     def test_set_one_key_leaves_others_alone(self, cfg):
         main(["config", "set", "url", "your-server:8102"])
         main(["config", "set", "username", "branden"])
-        main(["config", "set", "workers", "8"])
+        main(["config", "set", "types", "album,ep"])
         values = load_dotenv(cfg)
         assert values["NAVIDROME_URL"] == "http://your-server:4533"
         assert values["NAVIDROME_USERNAME"] == "branden"
-        assert values["WORKERS"] == "8"
+        assert values["RELEASE_TYPES"] == "album,ep"
 
     def test_unset(self, cfg, capsys):
-        main(["config", "set", "workers", "8"])
-        assert main(["config", "unset", "workers"]) == ExitCode.OK
-        assert "WORKERS" not in load_dotenv(cfg)
+        main(["config", "set", "types", "album"])
+        assert main(["config", "unset", "types"]) == ExitCode.OK
+        assert "RELEASE_TYPES" not in load_dotenv(cfg)
 
     def test_list_reports_what_is_missing(self, cfg, capsys):
         main(["config", "list"])
@@ -217,3 +217,47 @@ class TestHintsNameRealCommands:
         # Pull `release-check <word>` style references out of the guidance.
         for match in re.finditer(r"release-check ([a-z-]+)", blob):
             assert match.group(1) in SUBCOMMANDS, f"hint names unknown command {match.group(1)!r}"
+
+
+class TestPersistedTypeFilter:
+    """The default output should match how the user actually collects."""
+
+    def test_parse_accepts_aliases_and_spacing(self):
+        from release_check.config import parse_release_types
+
+        assert parse_release_types("album,ep") == frozenset({"Album", "EP"})
+        assert parse_release_types("albums, singles") == frozenset({"Album", "Single"})
+        assert parse_release_types(" EP ") == frozenset({"EP"})
+
+    def test_empty_means_every_type(self):
+        from release_check.config import parse_release_types
+
+        assert parse_release_types("") == frozenset()
+        assert parse_release_types(None) == frozenset()
+
+    def test_unknown_type_is_rejected_with_the_valid_list(self):
+        from release_check.config import ConfigError, parse_release_types
+
+        with pytest.raises(ConfigError) as excinfo:
+            parse_release_types("album,lp")
+        assert "album" in (excinfo.value.hint or "")
+
+    def test_setting_survives_a_roundtrip(self, cfg, capsys):
+        from release_check.config import load_config
+
+        main(["config", "set", "url", "your-server:8102"])
+        main(["config", "set", "username", "branden"])
+        main(["config", "set", "types", "album,ep"])
+        capsys.readouterr()
+        config = load_config(
+            environ={
+                "RELEASE_CHECK_CONFIG_DIR": str(cfg.parent),
+                "NAVIDROME_PASSWORD": "not-a-real-password",
+            }
+        )
+        assert config.release_types == frozenset({"Album", "EP"})
+
+    def test_workers_setting_is_gone(self):
+        from release_check.config import SETTINGS
+
+        assert "workers" not in {s.key for s in SETTINGS}
