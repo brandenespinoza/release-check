@@ -311,3 +311,55 @@ class TestStreams:
         assert "conflicting evidence" in text
         assert "Unresolved artists (1)" in text
         assert "release_check map" in text
+
+
+class TestSinceCutoff:
+    """--since accepts a year, a month or a full date."""
+
+    def on(self, date, cutoff):
+        return ReleaseDate.parse(date).on_or_after(ReleaseDate.parse(cutoff))
+
+    def test_year_cutoff(self):
+        assert self.on("2024-06-15", "2024") is True
+        assert self.on("2023-12-31", "2024") is False
+
+    def test_month_cutoff(self):
+        assert self.on("2024-07-01", "2024-06") is True
+        assert self.on("2024-05-31", "2024-06") is False
+
+    def test_full_date_cutoff(self):
+        assert self.on("2024-06-15", "2024-06-01") is True
+        assert self.on("2024-06-01", "2024-06-01") is True, "the cutoff day is included"
+        assert self.on("2024-05-31", "2024-06-01") is False
+
+    def test_less_precise_release_is_kept(self):
+        # "2024" might fall after 2024-06-01, so excluding it would hide a
+        # release on a technicality.
+        assert self.on("2024", "2024-06-01") is True
+        assert self.on("2024-06", "2024-06-15") is True
+
+    def test_a_clearly_older_imprecise_date_is_still_excluded(self):
+        assert self.on("2019", "2024-06-01") is False
+
+    def test_unknown_dates_always_pass(self):
+        assert self.on("", "2024-06-01") is True
+
+
+class TestSinceArgument:
+    def test_accepted_forms(self):
+        from release_check.cli import _parse_since
+
+        assert str(_parse_since("2024")) == "2024"
+        assert str(_parse_since("2024-06")) == "2024-06"
+        assert str(_parse_since("2024-06-15")) == "2024-06-15"
+
+    def test_rejected_forms(self):
+        import argparse
+
+        import pytest
+
+        from release_check.cli import _parse_since
+
+        for bad in ("yesterday", "June", "24", ""):
+            with pytest.raises(argparse.ArgumentTypeError):
+                _parse_since(bad)

@@ -13,7 +13,7 @@ from conftest import FakeHttp, subsonic
 
 from release_check.deezer import DeezerProvider
 from release_check.errors import ConnectionTimeoutError
-from release_check.models import ReleaseType
+from release_check.models import ReleaseDate, ReleaseType
 from release_check.navidrome import NavidromeClient
 from release_check.report import build_summary, print_summary, render_table, sort_releases
 from release_check.scan import ScanOptions, Scanner
@@ -316,7 +316,7 @@ class TestFilters:
                 "61": {"title": "New", "tracks": [(f"N{i}", 200) for i in range(9)]},
             },
         )
-        result = scanner.run(ScanOptions(progress=False, since_year=2020))
+        result = scanner.run(ScanOptions(progress=False, since=ReleaseDate.parse("2020")))
         assert [m.release.title for m in result.missing] == ["New"]
 
     def test_type_filter(self, scanner):

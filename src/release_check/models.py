@@ -105,6 +105,26 @@ class ReleaseDate:
             return NotImplemented
         return self.sort_key < other.sort_key
 
+    def on_or_after(self, cutoff: ReleaseDate) -> bool:
+        """Is this date at or after `cutoff`, given both may be imprecise?
+
+        Comparison stops at whichever date is less precise, and an unknown
+        date always passes. A release dated only "2024" is not excluded by a
+        cutoff of 2024-06-01, because it may well fall after it — filtering it
+        out would hide a release on a technicality.
+        """
+        if self.year is None or cutoff.year is None:
+            return True
+        if self.year != cutoff.year:
+            return self.year > cutoff.year
+        if self.month is None or cutoff.month is None:
+            return True
+        if self.month != cutoff.month:
+            return self.month > cutoff.month
+        if self.day is None or cutoff.day is None:
+            return True
+        return self.day >= cutoff.day
+
     def __str__(self) -> str:
         if self.year is None:
             return "unknown"

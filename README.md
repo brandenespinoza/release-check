@@ -110,7 +110,7 @@ current values as defaults, so pressing Enter keeps them.
 For a single change:
 
 ```bash
-release-check config list                    # every setting and where it came from
+release-check config                         # every setting and where it came from
 release-check config set url http://your-server:4533
 release-check config set timeout 30
 release-check config password                # prompted, never echoed
@@ -118,11 +118,11 @@ release-check config unset timeout           # back to the default
 release-check config path                    # where the file lives
 ```
 
-`config list` shows provenance, which is what you want when a change appears
+`config` shows provenance, which is what you want when a change appears
 not to take effect:
 
 ```text
-url            http://your-server:4533  (/Users/you/.config/release_check/.env)
+url            http://music:4533  (/Users/you/.config/release_check/.env)
 username       branden            ($NAVIDROME_URL style: environment)
 password       ********           (/Users/you/.config/release_check/.env)
 timeout        20                 (default)
@@ -153,8 +153,8 @@ release-check config unset types
 
 
 `NAVIDROME_URL` is the base URL only — `/rest` is appended for you. Any host,
-port or path works; `your-server` is resolved through Tailscale exactly as your
-browser would. This tool never installs or configures Tailscale.
+port or path works. A hostname on a private network or VPN resolves exactly
+as it would in your browser; this tool never configures networking itself.
 
 Settings are read from the first source that has them:
 
@@ -178,7 +178,7 @@ Subsonic-compatible. If something is wrong it says which thing:
 
 | Message | Meaning |
 |---|---|
-| Could not resolve the hostname | DNS/MagicDNS cannot find `your-server` |
+| Could not resolve the hostname | DNS cannot find the host |
 | Connection refused | Host is up, nothing listening on that port |
 | No route to host | Host is offline or off the tailnet |
 | Connection timed out | Host is unreachable or asleep |
@@ -202,7 +202,9 @@ gives you a clean file.
 Useful flags:
 
 ```bash
-release-check --since 2024            # only recent releases
+release-check --since 2024            # a year...
+release-check --since 2026-06         # ...a month...
+release-check --since 2026-06-15      # ...or an exact date
 release-check --type album --type ep  # skip singles
 release-check --artist "Björk"        # one artist
 release-check --flat                  # no type groups, pure date order
@@ -489,7 +491,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-416 tests, no network access, no real credentials, both APIs mocked. They cover
+425 tests, no network access, no real credentials, both APIs mocked. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version
 detection, duplicate collapsing, ambiguous artist results, manual mappings,

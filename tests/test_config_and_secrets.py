@@ -39,12 +39,12 @@ class TestUrlValidation:
     @pytest.mark.parametrize(
         "raw,expected",
         [
-            ("http://your-server:4533", "http://your-server:4533"),
-            ("http://your-server:4533/", "http://your-server:4533"),
-            ("your-server:8102", "http://your-server:4533"),
+            ("http://example:4533", "http://example:4533"),
+            ("http://example:4533/", "http://example:4533"),
+            ("example:4533", "http://example:4533"),
             ("https://music.example.ts.net", "https://music.example.ts.net"),
-            ("http://your-server:4533/music", "http://your-server:4533/music"),
-            ("http://your-server:4533/rest", "http://your-server:4533"),  # common mix-up
+            ("http://example:4533/music", "http://example:4533/music"),
+            ("http://example:4533/rest", "http://example:4533"),  # common mix-up
             ("http://your-server.tail1234.ts.net:4533", "http://your-server.tail1234.ts.net:4533"),
         ],
     )
@@ -56,15 +56,15 @@ class TestUrlValidation:
         from release_check.secrets import Secret as S
 
         config = Config(
-            navidrome_url=normalize_url("http://your-server:4533/rest"),
+            navidrome_url=normalize_url("http://example:4533/rest"),
             navidrome_username="u",
             navidrome_password=S("p"),
         )
-        assert config.rest_base == "http://your-server:4533/rest"
+        assert config.rest_base == "http://example:4533/rest"
 
     @pytest.mark.parametrize(
         "raw",
-        ["", "   ", "ftp://your-server", "http://", "http://your-server:4533?x=1", "http://your-server:99999"],
+        ["", "   ", "ftp://your-server", "http://", "http://example:4533?x=1", "http://your-server:99999"],
     )
     def test_rejected_forms(self, raw):
         with pytest.raises(ConfigError):
@@ -72,7 +72,7 @@ class TestUrlValidation:
 
     def test_credentials_in_url_are_rejected(self):
         with pytest.raises(ConfigError, match="Do not put credentials"):
-            normalize_url("http://user:pass@your-server:8102")
+            normalize_url("http://user:pass@example:4533")
 
     def test_no_localhost_default_is_assumed(self):
         with pytest.raises(ConfigError):
@@ -120,7 +120,7 @@ class TestRedaction:
         assert REDACTED in scrub_text(f"sending {SAMPLE_SECRET} now")
 
     def test_credential_query_parameters_are_scrubbed_even_if_unregistered(self):
-        url = "http://your-server:4533/rest/ping.view?u=me&t=abc123def456&s=salt99"
+        url = "http://example:4533/rest/ping.view?u=me&t=abc123def456&s=salt99"
         scrubbed = scrub_text(url)
         assert "abc123def456" not in scrubbed
         assert "salt99" not in scrubbed
@@ -160,7 +160,7 @@ class TestRedaction:
 class TestLoadConfig:
     def _env_file(self, tmp_path, **overrides):
         values = {
-            "NAVIDROME_URL": "http://your-server:4533",
+            "NAVIDROME_URL": "http://example:4533",
             "NAVIDROME_USERNAME": "tester",
             "NAVIDROME_PASSWORD": PASSWORD,
         }
@@ -171,7 +171,7 @@ class TestLoadConfig:
 
     def test_loads_from_env_file(self, tmp_path):
         config = load_config(env_file=self._env_file(tmp_path), environ={})
-        assert config.navidrome_url == "http://your-server:4533"
+        assert config.navidrome_url == "http://example:4533"
         assert config.navidrome_password.reveal() == PASSWORD
 
     def test_real_environment_wins_over_file(self, tmp_path):
@@ -183,7 +183,7 @@ class TestLoadConfig:
 
     def test_missing_credentials_raise_config_error(self, tmp_path):
         path = tmp_path / ".env"
-        path.write_text("NAVIDROME_URL=http://your-server:4533\n")
+        path.write_text("NAVIDROME_URL=http://example:4533\n")
         with pytest.raises(ConfigError, match="NAVIDROME_USERNAME"):
             load_config(env_file=path, environ={})
 
@@ -197,14 +197,14 @@ class TestLoadConfig:
         path = tmp_path / ".env"
         path.write_text(
             "# a comment\n"
-            'NAVIDROME_URL="http://your-server:4533"\n'
+            'NAVIDROME_URL="http://example:4533"\n'
             "\n"
             "export NAVIDROME_USERNAME=tester\n"
             "NAVIDROME_PASSWORD='pass word'\n"
             "IGNORED_LINE\n"
         )
         values = load_dotenv(path)
-        assert values["NAVIDROME_URL"] == "http://your-server:4533"
+        assert values["NAVIDROME_URL"] == "http://example:4533"
         assert values["NAVIDROME_USERNAME"] == "tester"
         assert values["NAVIDROME_PASSWORD"] == "pass word"
         assert "IGNORED_LINE" not in values
@@ -244,12 +244,12 @@ class TestEnvFileDiscovery:
     def test_falls_back_to_the_user_config_directory(self, tmp_path, monkeypatch):
         # The scenario that matters: installed command, run from elsewhere.
         cfg = tmp_path / "cfg"
-        self._write(cfg / ".env", "http://your-server:4533")
+        self._write(cfg / ".env", "http://example:4533")
         workdir = tmp_path / "somewhere-else"
         workdir.mkdir()
         monkeypatch.chdir(workdir)
         config = load_config(environ={"RELEASE_CHECK_CONFIG_DIR": str(cfg)})
-        assert config.navidrome_url == "http://your-server:4533"
+        assert config.navidrome_url == "http://example:4533"
 
     def test_local_env_wins_over_user_config(self, tmp_path, monkeypatch):
         cfg = tmp_path / "cfg"
@@ -290,7 +290,7 @@ class TestEnvFileDiscovery:
         monkeypatch.chdir(tmp_path)
         config = load_config(
             environ={
-                "NAVIDROME_URL": "http://your-server:4533",
+                "NAVIDROME_URL": "http://example:4533",
                 "NAVIDROME_USERNAME": "u",
                 "NAVIDROME_PASSWORD": "p",
                 "RELEASE_CHECK_CONFIG_DIR": str(tmp_path / "cfg"),

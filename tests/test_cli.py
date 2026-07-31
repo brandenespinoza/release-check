@@ -98,7 +98,7 @@ class TestStateCommands:
     def _env(self, tmp_path, monkeypatch):
         env = tmp_path / ".env"
         env.write_text(
-            "NAVIDROME_URL=http://your-server:4533\n"
+            "NAVIDROME_URL=http://example:4533\n"
             "NAVIDROME_USERNAME=u\n"
             "NAVIDROME_PASSWORD=p\n"
             f"CACHE_PATH={tmp_path / 'state.sqlite3'}\n"

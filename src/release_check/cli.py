@@ -32,7 +32,7 @@ from .deezer import DeezerProvider, make_rate_limiter
 from .errors import ExitCode, ReleaseCheckError
 from .http import HttpClient
 from .logging_setup import setup_logging
-from .models import ReleaseType
+from .models import DatePrecision, ReleaseDate, ReleaseType
 from .navidrome import NavidromeClient
 from .report import (
     build_summary,
@@ -116,10 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--limit", type=int, default=None, help="scan at most N artists")
     scan.add_argument(
         "--since",
-        type=int,
+        type=_parse_since,
         default=None,
-        metavar="YEAR",
-        help="only consider releases from this year onwards",
+        metavar="DATE",
+        help="only consider releases on or after this date: YYYY, YYYY-MM or YYYY-MM-DD",
     )
     scan.add_argument(
         "--type",
@@ -151,7 +151,6 @@ def build_parser() -> argparse.ArgumentParser:
         "config", parents=[common], help="view or change individual settings"
     )
     config_sub = config_cmd.add_subparsers(dest="config_action")
-    config_sub.add_parser("list", parents=[common], help="show every setting and its source")
     config_sub.add_parser("path", parents=[common], help="print the settings file location")
     setter = config_sub.add_parser("set", parents=[common], help="change one setting")
     setter.add_argument("key", choices=[s.key for s in SETTINGS])
@@ -224,6 +223,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def _parse_since(text: str) -> ReleaseDate:
+    """Accept a year, a year-month, or a full date for --since."""
+    parsed = ReleaseDate.parse(text)
+    if parsed.precision is DatePrecision.UNKNOWN:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a date. Use YYYY, YYYY-MM or YYYY-MM-DD."
+        )
+    return parsed
 
 
 #: Options that consume the following token, so it is not mistaken for a command.
@@ -327,7 +336,7 @@ def cmd_scan(args) -> int:
     options = ScanOptions(
         artist_filters=args.artist,
         limit=args.limit,
-        since_year=args.since,
+        since=args.since,
         types=types,
         progress=not args.no_progress,
     )
@@ -372,14 +381,15 @@ def cmd_setup(args) -> int:
 
 
 def cmd_config(args) -> int:
-    action = getattr(args, "config_action", None) or "list"
+    # A bare `config` shows the settings; there is no separate `list`.
+    action = getattr(args, "config_action", None) or "show"
     path = _settings_path(args)
 
     if action == "path":
         print(path)
         return ExitCode.OK
 
-    if action == "list":
+    if action == "show":
         rows = describe_settings(args.env_file)
         width = max(len(r.setting.key) for r in rows)
         value_width = max(len(r.display) for r in rows)
@@ -387,6 +397,10 @@ def cmd_config(args) -> int:
             source = "" if row.value is None else f"({row.source})"
             line = f"{row.setting.key:<{width}}  {row.display:<{value_width}}  {source}"
             print(line.rstrip())
+        print(
+            f"\nChange one with: {invocation_name()} config set <key> <value>"
+            f"\n         or all: {invocation_name()} setup"
+        )
         missing = [r.setting.key for r in rows if r.setting.required and not r.value]
         if missing:
             # stdout is block-buffered when piped; flush so the note below

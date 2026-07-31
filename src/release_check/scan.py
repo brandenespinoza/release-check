@@ -25,6 +25,7 @@ from .models import (
     LocalTrack,
     MissingRelease,
     Ownership,
+    ReleaseDate,
     ReleaseType,
     ReviewItem,
     UnresolvedArtist,
@@ -52,7 +53,7 @@ ISRC_REFERENCE_YEAR_WINDOW = 2
 class ScanOptions:
     artist_filters: list[str] = field(default_factory=list)
     limit: int | None = None
-    since_year: int | None = None
+    since: ReleaseDate | None = None
     types: set[ReleaseType] | None = None
     progress: bool = True
 
@@ -317,12 +318,8 @@ class Scanner:
         if not releases:
             releases = self.provider.get_discography(resolution.artist.id)
 
-        if options.since_year:
-            releases = [
-                r
-                for r in releases
-                if r.release_date.year is None or r.release_date.year >= options.since_year
-            ]
+        if options.since is not None:
+            releases = [r for r in releases if r.release_date.on_or_after(options.since)]
 
         canonical, _ = deduplicate(releases, artist_key=fold(artist.name))
         if not canonical:

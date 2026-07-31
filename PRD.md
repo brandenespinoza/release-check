@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 416 automated tests, no runtime dependencies.
+Status: complete and working. 425 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -116,7 +116,7 @@ name.
 |---|---|
 | *(none)* / `scan` | Scan the library and list missing releases |
 | `setup` | Guided setup: collect settings, test the connection, save |
-| `config` | `list`, `set`, `unset`, `password`, `path` |
+| `config` | shows every setting and its source; `set`, `unset`, `password`, `path` |
 | `check` | Validate connectivity and credentials, then exit |
 | `resolve` | Work through unresolved artists interactively |
 | `review` | Decide on ambiguous releases so they stop recurring |
@@ -128,6 +128,11 @@ name.
 
 Scan flags: `--artist NAME` (repeatable), `--limit N`, `--since YEAR`,
 `--type TYPE` (repeatable), `--flat`, `--refresh`, `--no-progress`.
+
+`--since` accepts `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. Comparison stops at
+whichever side is less precise, so a release dated only `2024` is not excluded
+by a cutoff of `2024-06-01` — it may fall after it, and filtering it out would
+hide a release on a technicality.
 
 `types` may be set persistently so the default output matches how the user
 collects; an explicit `--type` overrides it. Concurrency is not configurable:
@@ -227,9 +232,9 @@ A `.gitignore` covers `.env`, `*.sqlite3` and the usual Python artifacts.
 
 ## Environment
 
-Runs locally on macOS against a Navidrome instance on another machine reachable
-over an existing Tailscale network (hostname `your-server`). The tool never installs,
-configures or modifies Tailscale, and assumes the host already resolves.
+Runs locally on macOS against a Navidrome instance on another machine, typically
+reachable over a private network or VPN. The tool never configures networking
+and assumes the host already resolves.
 
 Python 3.10 or newer; developed and tested on 3.12.
 

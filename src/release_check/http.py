@@ -181,13 +181,13 @@ def _translate_url_error(exc: urllib.error.URLError, safe_url: str):
             f"Could not resolve the hostname in {safe_url}.",
             hint=(
                 "Check the hostname spelling, that Tailscale is running, and that "
-                "MagicDNS is enabled. Try: tailscale status"
+                "any VPN or Tailscale connection is up."
             ),
         )
     if isinstance(reason, (TimeoutError, socket.timeout)):
         return ConnectionTimeoutError(
             f"Connection to {safe_url} timed out.",
-            hint="The host may be offline or asleep. Try: tailscale ping your-server",
+            hint="The host may be offline or asleep, or off the tailnet.",
         )
     if isinstance(reason, ConnectionRefusedError):
         return HostUnreachableError(
@@ -199,7 +199,7 @@ def _translate_url_error(exc: urllib.error.URLError, safe_url: str):
         if getattr(reason, "errno", None) in (65, 51, 101, 113):
             return HostUnreachableError(
                 f"No route to {safe_url}.",
-                hint="The host appears offline. Try: tailscale ping your-server",
+                hint="The host appears to be offline or unreachable.",
             )
         return HostUnreachableError(f"Could not connect to {safe_url}: {reason}")
 

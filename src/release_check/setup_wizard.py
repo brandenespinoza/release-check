@@ -32,14 +32,29 @@ from .secrets import Secret
 MAX_ATTEMPTS = 3
 
 
-def _prompt(label: str, current: str | None = None, secret: bool = False) -> str:
-    """Ask for one value, offering the current one as the default."""
+def _prompt(
+    label: str,
+    current: str | None = None,
+    secret: bool = False,
+    placeholder: str | None = None,
+) -> str:
+    """Ask for one value.
+
+    A previously saved value is offered in brackets and kept on Enter. A
+    placeholder only shows the expected shape and is never submitted, so the
+    tool never guesses at somebody's hostname.
+    """
     if secret:
         suffix = " [keep current]" if current else ""
         value = getpass.getpass(f"  {label}{suffix}: ")
         return value or (current or "")
 
-    suffix = f" [{current}]" if current else ""
+    if current:
+        suffix = f" [{current}]"
+    elif placeholder:
+        suffix = f" (e.g. {placeholder})"
+    else:
+        suffix = ""
     value = input(f"  {label}{suffix}: ").strip()
     return value or (current or "")
 
@@ -107,7 +122,7 @@ def run_setup(env_file: Path | None = None, environ: dict[str, str] | None = Non
     timeout = float(resolved["timeout"].value or 20)
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        url_input = _prompt("Navidrome URL", url or "http://your-server:4533")
+        url_input = _prompt("Navidrome URL", url, placeholder="http://host:4533")
         try:
             url = normalize_url(url_input)
         except ConfigError as exc:

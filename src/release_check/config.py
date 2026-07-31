@@ -221,7 +221,7 @@ class Config:
 
     @property
     def rest_base(self) -> str:
-        """Base URL for Subsonic REST calls, e.g. ``http://your-server:4533/rest``."""
+        """Base URL for Subsonic REST calls, e.g. ``http://host:4533/rest``."""
         return self.navidrome_url.rstrip("/") + "/rest"
 
 
@@ -310,14 +310,14 @@ def warn_if_world_readable(path: Path, stream=sys.stderr) -> bool:
 def normalize_url(raw: str) -> str:
     """Validate and canonicalise the Navidrome base URL.
 
-    Accepts ``your-server:8102`` and assumes http, since a bare Tailscale hostname is
-    the documented setup. Rejects anything that cannot address a server.
+    Accepts a bare ``host:port`` and assumes http, since that is the common
+    shape on a private network. Rejects anything that cannot address a server.
     """
     value = (raw or "").strip()
     if not value:
         raise ConfigError(
             "NAVIDROME_URL is not set.",
-            hint="Set it in .env, for example NAVIDROME_URL=http://your-server:4533",
+            hint="Example: NAVIDROME_URL=http://your-server:4533",
         )
 
     if "://" not in value:

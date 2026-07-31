@@ -59,6 +59,19 @@ class FakeHttp:
         return Response(status=status, body=body, content_type=content_type, url=url)
 
 
+@pytest.fixture(autouse=True)
+def isolate_user_directories(tmp_path_factory, monkeypatch):
+    """Point config and state at throwaway directories for every test.
+
+    Without this, a test that forgets to isolate itself silently writes into
+    the developer's real ~/.config and ~/.local/state.
+    """
+    base = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("RELEASE_CHECK_CONFIG_DIR", str(base / "config"))
+    monkeypatch.setenv("RELEASE_CHECK_STATE_DIR", str(base / "state"))
+    monkeypatch.delenv("RELEASE_CHECK_ENV", raising=False)
+
+
 @pytest.fixture
 def fake_http() -> FakeHttp:
     return FakeHttp()
@@ -67,7 +80,7 @@ def fake_http() -> FakeHttp:
 @pytest.fixture
 def config(tmp_path: Path) -> Config:
     return Config(
-        navidrome_url="http://your-server:4533",
+        navidrome_url="http://example:4533",
         navidrome_username="tester",
         navidrome_password=Secret("not-a-real-password"),
         request_timeout=5.0,

@@ -34,15 +34,15 @@ def cfg(tmp_path, monkeypatch):
 class TestSaveSettings:
     def test_file_is_private(self, tmp_path):
         path = tmp_path / "cfg" / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://your-server:4533"})
+        save_settings(path, {"NAVIDROME_URL": "http://example:4533"})
         assert path.stat().st_mode & 0o077 == 0
         assert path.parent.stat().st_mode & 0o077 == 0
 
     def test_roundtrip(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://your-server:4533", "RELEASE_TYPES": "album"})
+        save_settings(path, {"NAVIDROME_URL": "http://example:4533", "RELEASE_TYPES": "album"})
         values = load_dotenv(path)
-        assert values["NAVIDROME_URL"] == "http://your-server:4533"
+        assert values["NAVIDROME_URL"] == "http://example:4533"
         assert values["RELEASE_TYPES"] == "album"
 
     def test_empty_values_are_omitted(self, tmp_path):
@@ -84,13 +84,13 @@ class TestProvenance:
 
     def test_file_is_reported_by_path(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://your-server:4533"})
+        save_settings(path, {"NAVIDROME_URL": "http://example:4533"})
         rows = {r.setting.key: r for r in describe_settings(path, {})}
         assert rows["url"].source == str(path)
 
     def test_unset_optional_falls_back_to_default(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://your-server:4533"})
+        save_settings(path, {"NAVIDROME_URL": "http://example:4533"})
         rows = {r.setting.key: r for r in describe_settings(path, {})}
         assert rows["timeout"].value == "20"
         assert rows["timeout"].source == "default"
@@ -105,11 +105,11 @@ class TestProvenance:
 
 class TestConfigCommand:
     def test_set_and_list(self, cfg, capsys):
-        assert main(["config", "set", "url", "your-server:8102"]) == ExitCode.OK
+        assert main(["config", "set", "url", "example:4533"]) == ExitCode.OK
         capsys.readouterr()
-        assert main(["config", "list"]) == ExitCode.OK
+        assert main(["config"]) == ExitCode.OK
         out = capsys.readouterr().out
-        assert "http://your-server:4533" in out, "the URL should be normalised on the way in"
+        assert "http://example:4533" in out, "the URL should be normalised on the way in"
 
     def test_set_rejects_an_invalid_url(self, cfg, capsys):
         # main() turns ReleaseCheckError into an exit code, it does not raise.
@@ -126,16 +126,16 @@ class TestConfigCommand:
         assert not cfg.exists(), "nothing should have been written"
 
     def test_password_never_reaches_the_file_via_set(self, cfg, capsys):
-        main(["config", "set", "url", "your-server:8102"])
+        main(["config", "set", "url", "example:4533"])
         main(["config", "set", "password", "hunter2"])
         assert "hunter2" not in cfg.read_text()
 
     def test_set_one_key_leaves_others_alone(self, cfg):
-        main(["config", "set", "url", "your-server:8102"])
+        main(["config", "set", "url", "example:4533"])
         main(["config", "set", "username", "branden"])
         main(["config", "set", "types", "album,ep"])
         values = load_dotenv(cfg)
-        assert values["NAVIDROME_URL"] == "http://your-server:4533"
+        assert values["NAVIDROME_URL"] == "http://example:4533"
         assert values["NAVIDROME_USERNAME"] == "branden"
         assert values["RELEASE_TYPES"] == "album,ep"
 
@@ -145,7 +145,7 @@ class TestConfigCommand:
         assert "RELEASE_TYPES" not in load_dotenv(cfg)
 
     def test_list_reports_what_is_missing(self, cfg, capsys):
-        main(["config", "list"])
+        main(["config"])
         captured = capsys.readouterr()
         assert "Not configured" in captured.err
         assert "setup" in captured.err
@@ -153,26 +153,35 @@ class TestConfigCommand:
         assert "Not configured" not in captured.out
 
     def test_list_warns_when_the_environment_masks_the_file(self, cfg, monkeypatch, capsys):
-        main(["config", "set", "url", "your-server:8102"])
+        main(["config", "set", "url", "example:4533"])
         monkeypatch.setenv("NAVIDROME_URL", "http://override:9")
         capsys.readouterr()
-        main(["config", "list"])
+        main(["config"])
         out = capsys.readouterr().out
         assert "http://override:9" in out
         assert "environment" in out
 
     def test_set_notes_an_environment_override(self, cfg, monkeypatch, capsys):
         monkeypatch.setenv("NAVIDROME_URL", "http://override:9")
-        main(["config", "set", "url", "your-server:8102"])
+        main(["config", "set", "url", "example:4533"])
         assert "still" in capsys.readouterr().err
 
     def test_path(self, cfg, capsys):
         assert main(["config", "path"]) == ExitCode.OK
         assert capsys.readouterr().out.strip().endswith(".env")
 
-    def test_bare_config_lists(self, cfg, capsys):
+    def test_bare_config_shows_settings(self, cfg, capsys):
         assert main(["config"]) == ExitCode.OK
-        assert "url" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "url" in out
+        assert "config set" in out, "should point at how to change one"
+
+    def test_there_is_no_separate_list_subcommand(self, cfg):
+        # `config` and `config list` doing the same thing was confusing.
+        import pytest as _pytest
+
+        with _pytest.raises(SystemExit):
+            main(["config", "list"])
 
 
 class TestSetupCommand:
@@ -211,7 +220,7 @@ class TestHintsNameRealCommands:
         from release_check.cli import SUBCOMMANDS
 
         main(["check"])
-        main(["config", "list"])
+        main(["config"])
         text = capsys.readouterr()
         blob = text.out + text.err
         # Pull `release-check <word>` style references out of the guidance.
@@ -245,7 +254,7 @@ class TestPersistedTypeFilter:
     def test_setting_survives_a_roundtrip(self, cfg, capsys):
         from release_check.config import load_config
 
-        main(["config", "set", "url", "your-server:8102"])
+        main(["config", "set", "url", "example:4533"])
         main(["config", "set", "username", "branden"])
         main(["config", "set", "types", "album,ep"])
         capsys.readouterr()

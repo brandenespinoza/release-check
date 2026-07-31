@@ -35,7 +35,7 @@ class TestErrorTaxonomy:
     def test_dns_failure(self):
         error = _translate_url_error(
             urllib.error.URLError(socket.gaierror(8, "nodename nor servname provided")),
-            "http://your-server:4533",
+            "http://example:4533",
         )
         assert isinstance(error, HostResolutionError)
         assert "tailscale" in (error.hint or "").lower()
@@ -43,34 +43,34 @@ class TestErrorTaxonomy:
     def test_connection_refused_points_at_the_port(self):
         error = _translate_url_error(
             urllib.error.URLError(ConnectionRefusedError(61, "Connection refused")),
-            "http://your-server:4533",
+            "http://example:4533",
         )
         assert isinstance(error, HostUnreachableError)
         assert "port" in (error.hint or "").lower()
 
     def test_no_route_to_host(self):
         error = _translate_url_error(
-            urllib.error.URLError(OSError(65, "No route to host")), "http://your-server:4533"
+            urllib.error.URLError(OSError(65, "No route to host")), "http://example:4533"
         )
         assert isinstance(error, HostUnreachableError)
 
     def test_timeout(self):
         error = _translate_url_error(
-            urllib.error.URLError(TimeoutError("timed out")), "http://your-server:4533"
+            urllib.error.URLError(TimeoutError("timed out")), "http://example:4533"
         )
         assert isinstance(error, ConnectionTimeoutError)
 
     def test_tls_verification_failure(self):
         error = _translate_url_error(
             urllib.error.URLError(ssl.SSLCertVerificationError("self signed certificate")),
-            "https://your-server:8102",
+            "https://example:4533",
         )
         assert isinstance(error, TLSError)
 
     def test_each_condition_has_a_distinct_type(self):
         types = {
             type(
-                _translate_url_error(urllib.error.URLError(reason), "http://your-server:4533")
+                _translate_url_error(urllib.error.URLError(reason), "http://example:4533")
             )
             for reason in [
                 socket.gaierror(8, "x"),
