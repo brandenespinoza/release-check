@@ -197,6 +197,13 @@ class DeezerProvider:
             releases.append(_release_from_json(row, artist_id, artist_name))
         return releases
 
+    def album_summary(self, release_id: str) -> dict | None:
+        """Album metadata for display only. Served from cache when present."""
+        try:
+            return self._get(f"/album/{release_id}", cache_key=f"album:{release_id}")
+        except DeezerNotFound:
+            return None
+
     def load_release_detail(self, release: DeezerRelease) -> DeezerRelease:
         """Fill in UPC, label, contributors and the complete track list.
 

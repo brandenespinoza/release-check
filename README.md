@@ -356,7 +356,27 @@ Alabama — American Christmas
 undecided, `u` clears a decision you made earlier. Decisions are stored against
 the Deezer release ID, so the same question is never asked twice.
 
-`release-check cache --reset-decisions` forgets all of them.
+### Ignoring one release from the results
+
+Any release in the main list can be dismissed the same way. Every result line
+ends with its Deezer URL, so copy that (or just the number at the end):
+
+```bash
+release-check review https://www.deezer.com/album/558123 --own
+```
+
+```text
+Ignoring Alabama — American Christmas. It will not be reported again.
+```
+
+| | |
+|---|---|
+| `--own` | I have it; stop reporting it |
+| `--missing` | I don't have it; always report it |
+| `--clear` | forget the decision, judge it normally again |
+
+Without a flag it shows the release and prompts. `release-check cache
+--reset-decisions` forgets all of them.
 
 ## How matching works
 
@@ -501,7 +521,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-433 tests, no network access, no real credentials, both APIs mocked. They cover
+443 tests, no network access, no real credentials, both APIs mocked. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version
 detection, duplicate collapsing, ambiguous artist results, manual mappings,

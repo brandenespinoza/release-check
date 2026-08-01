@@ -167,11 +167,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="verify Navidrome connectivity and credentials, then exit",
     )
 
-    sub.add_parser(
+    reviewer = sub.add_parser(
         "review",
         parents=[common],
-        help="decide on ambiguous releases so they stop being reported",
+        help="decide on releases so they stop being reported",
     )
+    reviewer.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        metavar="ID_OR_URL",
+        help="a Deezer album id or URL from the results list",
+    )
+    decision_group = reviewer.add_mutually_exclusive_group()
+    decision_group.add_argument(
+        "--own",
+        dest="decision",
+        action="store_const",
+        const="owned",
+        help="I have this release; stop reporting it",
+    )
+    decision_group.add_argument(
+        "--missing",
+        dest="decision",
+        action="store_const",
+        const="missing",
+        help="I do not have it; always report it",
+    )
+    decision_group.add_argument(
+        "--clear",
+        dest="decision",
+        action="store_const",
+        const="clear",
+        help="forget a previous decision about it",
+    )
+    reviewer.set_defaults(decision=None)
 
     resolver = sub.add_parser(
         "resolve",
@@ -495,10 +525,19 @@ def cmd_check(args) -> int:
 
 
 def cmd_review(args) -> int:
-    from .review_ui import run_review
+    from .review_ui import decide_one, run_review
 
     config = load_config(env_file=args.env_file)
     with _open_store(config) as store:
+        if args.target:
+            _, provider = _make_clients(config, store, refresh=False)
+            return decide_one(store, provider, args.target, args.decision)
+        if args.decision:
+            print(
+                "error: --own/--missing/--clear need a release id or URL.",
+                file=sys.stderr,
+            )
+            return ExitCode.USAGE
         return run_review(store)
 
 

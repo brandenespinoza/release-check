@@ -138,3 +138,91 @@ class TestDecisionsAffectOwnership:
             release, index, ReleaseType.ALBUM, {"999": DECISION_OWNED}
         )
         assert verdict.ownership is Ownership.AMBIGUOUS
+
+
+class TestDecideOneRelease:
+    """Ignoring a specific album from the results list, not just the queue."""
+
+    def _provider(self):
+        class P:
+            def album_summary(self, release_id):
+                return {
+                    "title": "American Christmas",
+                    "artist": {"name": "Alabama"},
+                    "release_date": "2017-10-06",
+                    "record_type": "album",
+                }
+
+        return P()
+
+    def test_own_by_bare_id(self, store, capsys):
+        from release_check.review_ui import decide_one
+
+        assert decide_one(store, self._provider(), "558123", "owned") == ExitCode.OK
+        assert store.release_decisions() == {"558123": DECISION_OWNED}
+        assert "Ignoring Alabama — American Christmas" in capsys.readouterr().out
+
+    def test_own_by_url_from_the_results_list(self, store):
+        from release_check.review_ui import decide_one
+
+        url = "https://www.deezer.com/album/558123"
+        decide_one(store, self._provider(), url, "owned")
+        assert store.release_decisions() == {"558123": DECISION_OWNED}
+
+    def test_localised_url_form(self, store):
+        from release_check.review_ui import decide_one
+
+        decide_one(store, self._provider(), "https://www.deezer.com/en/album/558123", "owned")
+        assert store.release_decisions() == {"558123": DECISION_OWNED}
+
+    def test_missing_forces_it_into_the_report(self, store):
+        from release_check.review_ui import decide_one
+
+        decide_one(store, self._provider(), "558123", "missing")
+        assert store.release_decisions() == {"558123": DECISION_MISSING}
+
+    def test_clear_undoes_it(self, store, capsys):
+        from release_check.review_ui import decide_one
+
+        decide_one(store, self._provider(), "558123", "owned")
+        decide_one(store, self._provider(), "558123", "clear")
+        assert store.release_decisions() == {}
+
+    def test_clear_when_nothing_stored(self, store, capsys):
+        from release_check.review_ui import decide_one
+
+        assert decide_one(store, self._provider(), "558123", "clear") == ExitCode.OK
+        assert "No decision was stored" in capsys.readouterr().out
+
+    def test_garbage_target_is_rejected(self, store, capsys):
+        from release_check.errors import ExitCode as EC
+        from release_check.review_ui import decide_one
+
+        assert decide_one(store, self._provider(), "not-an-id", "owned") == EC.USAGE
+        assert store.release_decisions() == {}
+        assert "not a Deezer album id or URL" in capsys.readouterr().err
+
+    def test_works_without_a_provider(self, store, capsys):
+        from release_check.review_ui import decide_one
+
+        assert decide_one(store, None, "558123", "owned") == ExitCode.OK
+        assert store.release_decisions() == {"558123": DECISION_OWNED}
+
+    def test_queue_entry_is_preferred_over_a_fetch(self, queued, capsys):
+        from release_check.review_ui import decide_one
+
+        decide_one(queued, self._provider(), "555", "owned")
+        assert "American Christmas" in capsys.readouterr().out
+
+
+class TestExtractAlbumId:
+    def test_forms(self):
+        from release_check.review_ui import extract_album_id
+
+        assert extract_album_id("558123") == "558123"
+        assert extract_album_id("https://www.deezer.com/album/558123") == "558123"
+        assert extract_album_id("https://www.deezer.com/fr/album/558123?x=1") == "558123"
+        assert extract_album_id("nonsense") is None
+        assert extract_album_id("") is None
+        # An artist URL is not an album URL.
+        assert extract_album_id("https://www.deezer.com/artist/558123") is None

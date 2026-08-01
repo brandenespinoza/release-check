@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 433 automated tests, no runtime dependencies.
+Status: complete and working. 443 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -119,7 +119,7 @@ name.
 | `config` | shows every setting and its source; `set`, `unset`, `password`, `path` |
 | `check` | Validate connectivity and credentials, then exit |
 | `resolve [artist]` | Work through unresolved artists, or re-open one by name |
-| `review` | Decide on ambiguous releases so they stop recurring |
+| `review [id\|url]` | Decide on ambiguous releases, or on any one release by id |
 | `artists` | Show unresolved artists from the last scan; `--mappings` lists saved mappings |
 | `map <local> <id>...` | Pin a local artist to one or more Deezer artists |
 | `unmap <local>` | Clear everything known about an artist, back to unresolved |
@@ -447,6 +447,12 @@ ambiguous releases from the last scan and records a decision — owned or missin
 — against the Deezer release ID. A stored decision short-circuits ownership
 determination on the next scan, so the same question is never asked twice.
 Without this the review section is write-only and grows without bound.
+
+Decisions apply to **any** release, not only ambiguous ones, so a release in the
+main list can be dismissed the same way: `review <id|url> --own`. The results
+table prints each release's Deezer URL precisely so it can be used as the
+handle. `--missing` forces a release into the report, `--clear` reverts to
+normal judgement.
 
 Two independent lines of evidence are used.
 
