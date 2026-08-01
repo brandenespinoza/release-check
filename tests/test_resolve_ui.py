@@ -125,10 +125,10 @@ class TestActions:
         run_resolve(unresolved, provider, set())
         assert unresolved.get_mapping("Ghost") is None
 
-    def test_ignore(self, unresolved, provider, monkeypatch):
-        drive(monkeypatch, ["i"])
+    def test_block(self, unresolved, provider, monkeypatch):
+        drive(monkeypatch, ["b"])
         run_resolve(unresolved, provider, set())
-        assert unresolved.get_mapping("Ghost").is_ignored
+        assert unresolved.get_mapping("Ghost").is_blocked
 
     def test_clear_returns_an_artist_to_unresolved(self, unresolved, provider, monkeypatch):
         unresolved.set_mapping("Ghost", [MappingTarget("1", "Ghost"), MappingTarget("2", "Ghost")])

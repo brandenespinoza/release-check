@@ -49,7 +49,7 @@ log = logging.getLogger("release_check.cli")
 
 SUBCOMMANDS = {
     "scan", "setup", "config", "check", "resolve", "review", "artists", "map",
-    "unmap", "ignore", "cache",
+    "unmap", "block", "unblock", "cache",
 }
 
 _TYPE_ALIASES = {
@@ -243,10 +243,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     unmap.add_argument("local_name")
 
-    ignore = sub.add_parser(
-        "ignore", parents=[common], help="never report releases for this local artist"
-    )
-    ignore.add_argument("local_name")
+    for name, verb in (("block", "stop"), ("unblock", "resume")):
+        parser_ = sub.add_parser(
+            name,
+            parents=[common],
+            help=f"{verb} reporting an artist, or a single release",
+        )
+        parser_.add_argument(
+            "target",
+            nargs="?",
+            default=None,
+            metavar="ARTIST",
+            help="shorthand for --artist",
+        )
+        which = parser_.add_mutually_exclusive_group()
+        which.add_argument(
+            "--artist",
+            metavar="NAME|ID|URL",
+            help="a local artist name, or a Deezer artist id or URL",
+        )
+        which.add_argument(
+            "--album",
+            metavar="ID|URL",
+            help="a Deezer album id or URL, of any type: album, EP or single",
+        )
 
     cache = sub.add_parser("cache", parents=[common], help="inspect or clear local state")
     cache.add_argument("--clear", action="store_true", help="delete cached API responses")
@@ -336,8 +356,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_artists(args)
         if command == "map":
             return cmd_map(args)
-        if command in ("unmap", "ignore"):
-            return cmd_mapping_change(args, command)
+        if command == "unmap":
+            return cmd_unmap(args)
+        if command in ("block", "unblock"):
+            return cmd_block(args, undo=command == "unblock")
         if command == "cache":
             return cmd_cache(args)
     except ReleaseCheckError as exc:
@@ -359,6 +381,23 @@ def _report_error(exc: ReleaseCheckError) -> None:
 
 def _open_store(config: Config) -> Store:
     return Store(config.cache_path, max_age_hours=config.cache_max_age_hours)
+
+
+def _load(args) -> Config:
+    """Config for a command that does not need a Navidrome server."""
+    return load_config(env_file=args.env_file, require_navidrome=False)
+
+
+def _deezer_only(config: Config, store: Store) -> DeezerProvider:
+    """A Deezer client. Deezer's public API needs no credentials."""
+    return DeezerProvider(
+        HttpClient(
+            timeout=config.request_timeout,
+            user_agent=USER_AGENT,
+            rate_limiter=make_rate_limiter(),
+        ),
+        cache=store,
+    )
 
 
 def cmd_scan(args) -> int:
@@ -527,11 +566,12 @@ def cmd_check(args) -> int:
 def cmd_review(args) -> int:
     from .review_ui import decide_one, run_review
 
-    config = load_config(env_file=args.env_file)
+    config = _load(args)
     with _open_store(config) as store:
         if args.target:
-            _, provider = _make_clients(config, store, refresh=False)
-            return decide_one(store, provider, args.target, args.decision)
+            return decide_one(
+                store, _deezer_only(config, store), args.target, args.decision
+            )
         if args.decision:
             print(
                 "error: --own/--missing/--clear need a release id or URL.",
@@ -544,25 +584,30 @@ def cmd_review(args) -> int:
 def cmd_resolve(args) -> int:
     from .resolve_ui import run_resolve
 
-    config = load_config(env_file=args.env_file)
+    config = _load(args)
     with _open_store(config) as store:
-        client, provider = _make_clients(config, store, refresh=False)
         # Local album titles let the picker highlight the decisive evidence.
+        # They are an aid, not a requirement: without a configured server the
+        # picker still works, it just cannot point out the titles you own.
         local_albums: set[str] = set()
-        try:
-            from .normalize import parse_title
+        if config.has_navidrome:
+            client, provider = _make_clients(config, store, refresh=False)
+            try:
+                from .normalize import parse_title
 
-            for album in client.get_all_albums():
-                base = parse_title(album.name).base
-                if base:
-                    local_albums.add(base)
-        except ReleaseCheckError as exc:
-            log.info("Could not read local albums for comparison: %s", exc)
+                for album in client.get_all_albums():
+                    base = parse_title(album.name).base
+                    if base:
+                        local_albums.add(base)
+            except ReleaseCheckError as exc:
+                log.info("Could not read local albums for comparison: %s", exc)
+        else:
+            provider = _deezer_only(config, store)
         return run_resolve(store, provider, local_albums, only=args.artist)
 
 
 def cmd_artists(args) -> int:
-    config = load_config(env_file=args.env_file)
+    config = _load(args)
     with _open_store(config) as store:
         if args.mappings:
             mappings = store.list_mappings()
@@ -592,16 +637,16 @@ def cmd_artists(args) -> int:
     print(
         f"\nWork through these interactively:  {program} resolve"
         f'\nOr set one directly:               {program} map "<artist>" <id> [<id> ...]'
-        f'\nOr skip one:                       {program} ignore "<artist>"'
+        f'\nOr skip one:                       {program} block --artist "<artist>"'
     )
     return ExitCode.OK
 
 
 def cmd_map(args) -> int:
-    config = load_config(env_file=args.env_file)
+    config = _load(args)
     ids = list(dict.fromkeys(args.deezer_id))  # de-duplicate, keep order
     with _open_store(config) as store:
-        _, provider = _make_clients(config, store, refresh=False)
+        provider = _deezer_only(config, store)
         targets = []
         for deezer_id in ids:
             artist = provider.get_artist(deezer_id)
@@ -617,13 +662,9 @@ def cmd_map(args) -> int:
     return ExitCode.OK
 
 
-def cmd_mapping_change(args, command: str) -> int:
-    config = load_config(env_file=args.env_file)
+def cmd_unmap(args) -> int:
+    config = _load(args)
     with _open_store(config) as store:
-        if command == "ignore":
-            store.ignore_artist(args.local_name)
-            print(f"Ignoring {args.local_name!r}.")
-            return ExitCode.OK
         removed = store.clear_mapping(args.local_name)
     if removed:
         print(
@@ -635,8 +676,36 @@ def cmd_mapping_change(args, command: str) -> int:
     return ExitCode.OK
 
 
+def cmd_block(args, undo: bool) -> int:
+    """`block` / `unblock`, for either an artist or a single release."""
+    from . import block_cmd
+
+    artist = args.artist or args.target
+    if args.album and args.target:
+        print(
+            "error: give either an artist or --album, not both.", file=sys.stderr
+        )
+        return ExitCode.USAGE
+    if not artist and not args.album:
+        verb = "unblock" if undo else "block"
+        program = invocation_name()
+        print(f"error: nothing to {verb}.", file=sys.stderr)
+        print(f'  {program} {verb} --artist "<name, id or URL>"', file=sys.stderr)
+        print(f"  {program} {verb} --album <id or URL>", file=sys.stderr)
+        return ExitCode.USAGE
+
+    config = _load(args)
+    with _open_store(config) as store:
+        provider = _deezer_only(config, store)
+        if args.album:
+            action = block_cmd.unblock_album if undo else block_cmd.block_album
+            return action(store, provider, args.album)
+        action = block_cmd.unblock_artist if undo else block_cmd.block_artist
+        return action(store, provider, artist)
+
+
 def cmd_cache(args) -> int:
-    config = load_config(env_file=args.env_file)
+    config = _load(args)
     with _open_store(config) as store:
         if args.clear:
             store.clear_cache()

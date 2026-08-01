@@ -146,7 +146,7 @@ class TestManualMappings:
         assert resolution.reason == "manual mapping"
 
     def test_ignored_artist_is_skipped(self, store):
-        store.ignore_artist("Skip Me")
+        store.block_artist("Skip Me")
         resolution = ArtistResolver(StubProvider(), store).resolve(local_artist("Skip Me"))
         assert resolution.status is Resolution.IGNORED
 

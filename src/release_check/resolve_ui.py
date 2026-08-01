@@ -2,7 +2,7 @@
 
 The scan never asks questions; this is where the answers get given. For each
 artist the scan could not resolve confidently, the user picks one or more
-Deezer artists, ignores the artist, clears what is known, or leaves it alone.
+Deezer artists, blocks the artist, clears what is known, or leaves it alone.
 
 Candidates are shown with a few of their album titles, because "which Ghost is
 mine" is answerable from a track listing and almost never from a fan count.
@@ -83,7 +83,7 @@ def _show(name: str, reason: str, candidates: list[Candidate], mapped: bool) -> 
         )
         for title in candidate.titles:
             print(f"       {title}")
-    actions = ["number(s) to map", "[s]kip", "[i]gnore"]
+    actions = ["number(s) to map", "[s]kip", "[b]lock"]
     if mapped:
         actions.append("[c]lear")
     actions += ["[d] enter an id or URL", "[q]uit"]
@@ -185,9 +185,9 @@ def run_resolve(
             if answer == "" or answer.lower() in ("s", "skip"):
                 break
 
-            if answer.lower() in ("i", "ignore"):
-                store.ignore_artist(name)
-                print(f"  Ignoring {name}. It will not be reported again.")
+            if answer.lower() in ("b", "block"):
+                store.block_artist(name)
+                print(f"  Blocking {name}. It will not be reported again.")
                 changed += 1
                 break
 
@@ -217,7 +217,7 @@ def run_resolve(
 
             picks = _parse_selection(answer, len(candidates))
             if picks is None:
-                print("  Enter one or more numbers, or s / i / d / q.")
+                print("  Enter one or more numbers, or s / b / d / q.")
                 continue
 
             targets = [

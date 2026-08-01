@@ -136,7 +136,7 @@ def describe_settings(
 ) -> list[ResolvedSetting]:
     """Effective value and provenance for every setting.
 
-    Exists so `config list` can answer "why isn't my change taking effect",
+    Exists so `config` can answer "why isn't my change taking effect",
     which is the obvious failure mode of a four-level precedence chain.
     """
     environ = os.environ if environ is None else environ
@@ -218,11 +218,17 @@ class Config:
     cache_max_age_hours: float = DEFAULT_CACHE_MAX_AGE_HOURS
     release_types: frozenset[str] = frozenset()
     verify_tls: bool = True
+    #: Set when the config was loaded without demanding Navidrome credentials.
+    missing_navidrome: tuple[str, ...] = ()
 
     @property
     def rest_base(self) -> str:
         """Base URL for Subsonic REST calls, e.g. ``http://host:4533/rest``."""
         return self.navidrome_url.rstrip("/") + "/rest"
+
+    @property
+    def has_navidrome(self) -> bool:
+        return not self.missing_navidrome
 
 
 def _parse_float(raw: str | None, default: float, name: str) -> float:
@@ -364,8 +370,17 @@ def load_config(
     env_file: Path | None = None,
     environ: dict[str, str] | None = None,
     warn_stream=sys.stderr,
+    require_navidrome: bool = True,
 ) -> Config:
-    """Build a validated Config from the environment and an optional .env."""
+    """Build a validated Config from the environment and an optional .env.
+
+    Commands that only read the local state file — listing mappings, recording
+    an ignore, inspecting the cache — pass ``require_navidrome=False``. They
+    genuinely do not need credentials, and refusing to run without them was
+    just an artefact of every command sharing one loader. The resulting Config
+    records what was missing in `missing_navidrome`, so anything that later
+    turns out to need a server can still fail with the usual message.
+    """
     environ = dict(os.environ if environ is None else environ)
 
     if env_file is not None and not Path(env_file).expanduser().is_file():
@@ -392,31 +407,44 @@ def load_config(
         return file_values.get(key)
 
     if env_path is None and not get("NAVIDROME_URL"):
-        locations = "\n    ".join(str(p) for p in searched)
-        raise ConfigError(
-            "No configuration found.",
-            hint=(
-                f"Run `{invocation_name()} setup` to configure it, or set NAVIDROME_URL in the "
-                f"environment.\n  Looked in:\n    {locations}"
-            ),
-        )
+        if require_navidrome:
+            locations = "\n    ".join(str(p) for p in searched)
+            raise ConfigError(
+                "No configuration found.",
+                hint=(
+                    f"Run `{invocation_name()} setup` to configure it, or set NAVIDROME_URL in the "
+                    f"environment.\n  Looked in:\n    {locations}"
+                ),
+            )
 
     where = f" in {env_path}" if env_path else ""
-    url = normalize_url(get("NAVIDROME_URL") or "")
+    missing: list[str] = []
+
+    raw_url = get("NAVIDROME_URL") or ""
+    if raw_url.strip() or require_navidrome:
+        # An empty URL under require_navidrome raises with the standard hint.
+        url = normalize_url(raw_url)
+    else:
+        url = ""
+        missing.append("NAVIDROME_URL")
 
     username = (get("NAVIDROME_USERNAME") or "").strip()
     if not username:
-        raise ConfigError(
-            "NAVIDROME_USERNAME is not set.",
-            hint=f"Add NAVIDROME_USERNAME{where}.",
-        )
+        if require_navidrome:
+            raise ConfigError(
+                "NAVIDROME_USERNAME is not set.",
+                hint=f"Add NAVIDROME_USERNAME{where}.",
+            )
+        missing.append("NAVIDROME_USERNAME")
 
     password = get("NAVIDROME_PASSWORD") or ""
     if not password:
-        raise ConfigError(
-            "NAVIDROME_PASSWORD is not set.",
-            hint=f"Add NAVIDROME_PASSWORD{where}.",
-        )
+        if require_navidrome:
+            raise ConfigError(
+                "NAVIDROME_PASSWORD is not set.",
+                hint=f"Add NAVIDROME_PASSWORD{where}.",
+            )
+        missing.append("NAVIDROME_PASSWORD")
 
     cache_raw = get("CACHE_PATH")
     cache_path = (
@@ -437,8 +465,10 @@ def load_config(
             "CACHE_MAX_AGE_HOURS",
         ),
         release_types=parse_release_types(get("RELEASE_TYPES")),
+        missing_navidrome=tuple(missing),
     )
 
     # Register the password so the logging filter can scrub it.
-    registry.register(config.navidrome_password)
+    if password:
+        registry.register(config.navidrome_password)
     return config

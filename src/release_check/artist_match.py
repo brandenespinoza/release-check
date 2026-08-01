@@ -21,7 +21,7 @@ from .deezer import DeezerProvider
 from .errors import ReleaseCheckError
 from .models import DeezerArtist, DeezerRelease, LocalArtist
 from .normalize import artist_key, artist_key_variants, fold, similarity
-from .state import STATUS_IGNORED, Store
+from .state import STATUS_BLOCKED, Store
 
 log = logging.getLogger("release_check.artist_match")
 
@@ -141,7 +141,7 @@ class ArtistResolver:
 
         mapping = self.store.get_mapping(local.name)
         if mapping is not None:
-            if mapping.status == STATUS_IGNORED:
+            if mapping.status == STATUS_BLOCKED:
                 return ArtistResolution(local, Resolution.IGNORED, reason="ignored by user")
             if mapping.targets:
                 return self._resolve_from_mapping(local, mapping)

@@ -107,10 +107,10 @@ class TestStateCommands:
             monkeypatch.delenv(key, raising=False)
         return ["--env-file", str(env)]
 
-    def test_ignore_and_unmap_roundtrip(self, tmp_path, monkeypatch, capsys):
+    def test_block_and_unmap_roundtrip(self, tmp_path, monkeypatch, capsys):
         env = self._env(tmp_path, monkeypatch)
-        assert main(["ignore", "Some Artist", *env]) == ExitCode.OK
-        assert "Ignoring" in capsys.readouterr().out
+        assert main(["block", "Some Artist", *env]) == ExitCode.OK
+        assert "Blocking" in capsys.readouterr().out
         assert main(["unmap", "Some Artist", *env]) == ExitCode.OK
         assert "Cleared" in capsys.readouterr().out
 

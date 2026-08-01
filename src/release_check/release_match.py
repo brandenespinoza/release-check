@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .models import (
+    DECISION_BLOCKED,
     DECISION_MISSING,
     DECISION_OWNED,
     DeezerRelease,
@@ -154,6 +155,8 @@ def determine_ownership(
     decision = (decisions or {}).get(release.id)
     if decision == DECISION_OWNED:
         return Verdict(Ownership.IGNORED, "you marked this as already owned")
+    if decision == DECISION_BLOCKED:
+        return Verdict(Ownership.IGNORED, "you blocked this release")
     if decision == DECISION_MISSING:
         return Verdict(Ownership.MISSING, "you marked this as missing")
 

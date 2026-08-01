@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from release_check.state import MappingTarget, STATUS_IGNORED, Store
+from release_check.state import MappingTarget, STATUS_BLOCKED, Store
 
 
 class TestCache:
@@ -79,10 +79,10 @@ class TestMappings:
         assert mapping.deezer_ids == ["42"]
         assert mapping.status == "confirmed"
 
-    def test_ignore(self, store):
-        store.ignore_artist("Skip")
-        assert store.get_mapping("Skip").status == STATUS_IGNORED
-        assert store.get_mapping("Skip").is_ignored
+    def test_block(self, store):
+        store.block_artist("Skip")
+        assert store.get_mapping("Skip").status == STATUS_BLOCKED
+        assert store.get_mapping("Skip").is_blocked
 
     def test_update_replaces(self, store):
         store.set_mapping("Ghost", [MappingTarget("1", "Ghost A")])
@@ -246,18 +246,37 @@ class TestMultipleTargets:
         assert store.clear_mapping("Ghost") is True
         assert store.get_mapping("Ghost") is None
 
-    def test_clear_also_lifts_an_ignore(self, store):
-        store.ignore_artist("Skip Me")
-        assert store.get_mapping("Skip Me").is_ignored
+    def test_clear_also_lifts_a_block(self, store):
+        store.block_artist("Skip Me")
+        assert store.get_mapping("Skip Me").is_blocked
         assert store.clear_mapping("Skip Me") is True
         assert store.get_mapping("Skip Me") is None
 
-    def test_ignoring_drops_any_existing_targets(self, store):
+    def test_blocking_keeps_any_existing_targets(self, store):
+        # The status is what suppresses the artist; keeping the ids means a
+        # Deezer id still names it, so `unblock <same id>` finds it again.
         store.set_mapping("Ghost", [MappingTarget("1", "A")])
-        store.ignore_artist("Ghost")
+        store.block_artist("Ghost")
         mapping = store.get_mapping("Ghost")
-        assert mapping.is_ignored
+        assert mapping.is_blocked
+        assert mapping.deezer_ids == ["1"]
+        assert mapping.describe() == "(blocked)"
+
+    def test_blocking_an_unknown_artist_needs_no_targets(self, store):
+        store.block_artist("Karaoke Hits Vol 3")
+        mapping = store.get_mapping("Karaoke Hits Vol 3")
+        assert mapping.is_blocked
         assert mapping.deezer_ids == []
+
+    def test_mappings_for_deezer_id_is_the_reverse_lookup(self, store):
+        store.set_mapping("Ghost", [MappingTarget("1", "A")])
+        store.set_mapping("Ghost B.C.", [MappingTarget("1", "A")])
+        store.set_mapping("Other", [MappingTarget("2", "B")])
+        assert [m.local_name for m in store.mappings_for_deezer_id("1")] == [
+            "Ghost",
+            "Ghost B.C.",
+        ]
+        assert store.mappings_for_deezer_id("999") == []
 
     def test_reset_clears_targets_too(self, store):
         store.set_mapping("A", [MappingTarget("1", "A"), MappingTarget("2", "A2")])
@@ -310,7 +329,7 @@ class TestSchemaMigration:
         path = tmp_path / "old.sqlite3"
         self._v1_database(path)
         with Store(path) as store:
-            assert store.get_mapping("Skip Me").is_ignored
+            assert store.get_mapping("Skip Me").is_blocked
 
     def test_migration_is_idempotent(self, tmp_path):
         path = tmp_path / "old.sqlite3"

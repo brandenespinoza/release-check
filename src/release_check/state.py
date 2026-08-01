@@ -1,4 +1,4 @@
-"""Local state: response cache, artist mappings and ignore lists.
+"""Local state: response cache, artist mappings and block lists.
 
 SQLite rather than JSON because the cache is written from several threads and
 a partially written JSON file loses everything, while SQLite gives atomic
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import DECISION_MISSING, DECISION_OWNED
+from .models import DECISIONS, DECISION_OWNED
 from .normalize import artist_key
 
 log = logging.getLogger("release_check.state")
@@ -76,7 +76,9 @@ STABLE_KEY_PREFIXES = ("album:", "album_tracks:")
 STABLE_MAX_AGE_HOURS = 24 * 30
 
 STATUS_CONFIRMED = "confirmed"
-STATUS_IGNORED = "ignored"
+#: The stored value stays "ignored": it predates the command being named
+#: `block`, and rewriting it would invalidate every existing state file.
+STATUS_BLOCKED = "ignored"
 
 
 SCHEMA_VERSION = 3
@@ -97,16 +99,16 @@ class ArtistMapping:
     updated_at: float
 
     @property
-    def is_ignored(self) -> bool:
-        return self.status == STATUS_IGNORED
+    def is_blocked(self) -> bool:
+        return self.status == STATUS_BLOCKED
 
     @property
     def deezer_ids(self) -> list[str]:
         return [t.deezer_id for t in self.targets]
 
     def describe(self) -> str:
-        if self.is_ignored:
-            return "(ignored)"
+        if self.is_blocked:
+            return "(blocked)"
         if not self.targets:
             return "(no Deezer artist)"
         return ", ".join(
@@ -344,13 +346,25 @@ class Store:
                 )
             self._conn.commit()
 
-    def ignore_artist(self, local_name: str) -> None:
-        self.set_mapping(local_name, [], status=STATUS_IGNORED)
+    def block_artist(self, local_name: str) -> None:
+        """Suppress an artist, keeping any Deezer ids already mapped to it.
+
+        The scan checks the status before it looks at targets, so keeping them
+        changes nothing there — but it means a Deezer id still names this
+        artist afterwards, so `block` and `unblock` round-trip on the same id.
+
+        The stored status stays the string "ignored": it predates the command
+        being named `block`, and rewriting it would invalidate existing state
+        files to no purpose.
+        """
+        existing = self.get_mapping(local_name)
+        targets = existing.targets if existing else []
+        self.set_mapping(local_name, targets, status=STATUS_BLOCKED)
 
     def clear_mapping(self, local_name: str) -> bool:
         """Forget everything about an artist, returning it to unresolved.
 
-        Clears every mapped Deezer id and any ignore flag, so the next scan
+        Clears every mapped Deezer id and any block flag, so the next scan
         resolves the artist from scratch.
         """
         key = artist_key(local_name)
@@ -383,6 +397,31 @@ class Store:
                 for r in rows
             ]
 
+    def mappings_for_deezer_id(self, deezer_id: str) -> list[ArtistMapping]:
+        """Local artists mapped to this Deezer artist.
+
+        The reverse of the usual lookup, so a Deezer URL copied out of the
+        results can name an artist the same way a local name does. More than
+        one local artist may point at the same Deezer artist.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT m.* FROM artist_mapping m "
+                "JOIN artist_mapping_target t ON t.local_key = m.local_key "
+                "WHERE t.deezer_id = ? ORDER BY m.local_name COLLATE NOCASE",
+                (str(deezer_id),),
+            ).fetchall()
+            return [
+                ArtistMapping(
+                    local_key=r["local_key"],
+                    local_name=r["local_name"],
+                    targets=self._targets_for(r["local_key"]),
+                    status=r["status"],
+                    updated_at=r["updated_at"],
+                )
+                for r in rows
+            ]
+
     def reset_mappings(self) -> int:
         with self._lock:
             self._conn.execute("DELETE FROM artist_mapping_target")
@@ -394,7 +433,7 @@ class Store:
 
     def set_release_decision(self, deezer_id: str, decision: str, note: str = "") -> None:
         """Record what the user said about an ambiguous release."""
-        if decision not in (DECISION_OWNED, DECISION_MISSING):
+        if decision not in DECISIONS:
             raise ValueError(f"unknown decision {decision!r}")
         with self._lock:
             self._conn.execute(

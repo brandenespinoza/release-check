@@ -47,7 +47,7 @@ class TestInvocations:
 
     def test_help_lists_the_subcommands(self):
         result = run(["release_check.py", "--help"], ROOT)
-        for command in ("scan", "check", "artists", "map", "unmap", "ignore", "cache"):
+        for command in ("scan", "check", "artists", "map", "unmap", "block", "cache"):
             assert command in result.stdout
 
     def test_missing_configuration_exits_three_not_a_traceback(self, tmp_path):

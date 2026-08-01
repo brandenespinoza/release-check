@@ -28,7 +28,7 @@ def extract_album_id(text: str) -> str | None:
     return stripped if stripped.isdigit() else None
 
 
-def _describe(store: Store, provider, release_id: str) -> dict:
+def describe_release(store: Store, provider, release_id: str) -> dict:
     """Find a release to show: from the review queue, else fetch it."""
     for entry in store.load_review():
         if str(entry.get("id")) == release_id:
@@ -84,7 +84,7 @@ def decide_one(
         )
         return ExitCode.USAGE
 
-    entry = _describe(store, provider, release_id)
+    entry = describe_release(store, provider, release_id)
     label = f"{entry['artist']} — {entry['title']}" if entry["artist"] else entry["title"]
 
     if decision == "clear":

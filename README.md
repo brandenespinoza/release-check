@@ -20,6 +20,8 @@ Singles (1)
 3 releases require review
 ```
 
+Every command and flag in one place: [docs/COMMANDS.md](docs/COMMANDS.md).
+
 ## What it does
 
 - Reads your artists, albums and tracks from Navidrome over its Subsonic API.
@@ -235,7 +237,7 @@ Running from a checkout instead? `python3 release_check.py` and
 
 ### Local state
 
-Cached API responses, artist mappings and ignore lists live in one SQLite file
+Cached API responses, artist mappings and block lists live in one SQLite file
 at `~/.local/state/release_check/state.sqlite3` (override with `CACHE_PATH`). It is
 an absolute path, so it is shared no matter where you run the command from.
 Cached entries expire after 24 hours by default (`CACHE_MAX_AGE_HOURS`) — but
@@ -300,7 +302,7 @@ Your options per artist:
 | `1` | Map to that Deezer artist |
 | `1 2` | Map to **both** — their discographies are merged |
 | Enter, or `s` | Leave it unresolved; you will be asked again next time |
-| `i` | Ignore permanently, never reported again |
+| `b` | Block permanently, never reported again |
 | `c` | Clear everything known about this artist, back to unresolved |
 | `d 1160651` or a Deezer URL | Use an ID you found yourself |
 | `q` | Stop here, keeping what you have already decided |
@@ -319,14 +321,14 @@ release-check resolve "Ghost"
 ```
 
 That searches Deezer fresh, shows your current mapping, and lets you pick
-again, clear it, or ignore the artist.
+again, clear it, or block the artist.
 
 The same things are available non-interactively:
 
 ```bash
 release-check map "Ghost" 1160651              # one
 release-check map "Ghost" 1160651 4859761      # several, merged
-release-check ignore "Karaoke Hits Vol 3"
+release-check block --artist "Karaoke Hits Vol 3"
 release-check unmap "Ghost"                    # clear, back to unresolved
 release-check artists --mappings               # list what is saved
 ```
@@ -356,18 +358,24 @@ Alabama — American Christmas
 undecided, `u` clears a decision you made earlier. Decisions are stored against
 the Deezer release ID, so the same question is never asked twice.
 
-### Ignoring one release from the results
+### Blocking one release from the results
 
-Any release in the main list can be dismissed the same way. Every result line
-ends with its Deezer URL, so copy that (or just the number at the end):
+Any release in the main list can be dismissed without going through review.
+Every result line ends with its Deezer URL, so copy that (or just the number at
+the end):
 
 ```bash
-release-check review https://www.deezer.com/album/558123 --own
+release-check block --album https://www.deezer.com/album/558123
+release-check unblock --album 558123          # undo
 ```
 
 ```text
-Ignoring Alabama — American Christmas. It will not be reported again.
+Blocking Alabama — American Christmas. It will not be reported again.
 ```
+
+That works for any release type — album, EP or single. Use `review --own`
+instead when you actually own the release: both suppress it, but only `--own`
+records a claim about your library.
 
 | | |
 |---|---|

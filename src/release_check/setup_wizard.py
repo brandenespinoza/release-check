@@ -155,7 +155,7 @@ def run_setup(env_file: Path | None = None, environ: dict[str, str] | None = Non
             print("You're ready:")
             print(f"  {program}                 list missing releases")
             print(f"  {program} --since 2024    only recent ones")
-            print(f"  {program} config list     review these settings")
+            print(f"  {program} config          review these settings")
             return ExitCode.OK
 
         if attempt < MAX_ATTEMPTS:

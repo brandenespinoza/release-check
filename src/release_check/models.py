@@ -24,9 +24,15 @@ class Ownership(str, Enum):
     IGNORED = "ignored"
 
 
-#: A decision the user recorded about an ambiguous release.
+#: A decision the user recorded about a release.
+#: OWNED and BLOCKED both suppress it; they are kept apart because "I have this"
+#: and "I don't want to be told about this" are different statements, and only
+#: the first is a claim about the library.
 DECISION_OWNED = "owned"
 DECISION_MISSING = "missing"
+DECISION_BLOCKED = "blocked"
+
+DECISIONS = (DECISION_OWNED, DECISION_MISSING, DECISION_BLOCKED)
 
 #: Only these appear in the main terminal list.
 REPORTABLE = (Ownership.MISSING, Ownership.PROBABLY_MISSING)
