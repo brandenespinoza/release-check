@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 425 automated tests, no runtime dependencies.
+Status: complete and working. 433 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -118,7 +118,7 @@ name.
 | `setup` | Guided setup: collect settings, test the connection, save |
 | `config` | shows every setting and its source; `set`, `unset`, `password`, `path` |
 | `check` | Validate connectivity and credentials, then exit |
-| `resolve` | Work through unresolved artists interactively |
+| `resolve [artist]` | Work through unresolved artists, or re-open one by name |
 | `review` | Decide on ambiguous releases so they stop recurring |
 | `artists` | Show unresolved artists from the last scan; `--mappings` lists saved mappings |
 | `map <local> <id>...` | Pin a local artist to one or more Deezer artists |
@@ -399,7 +399,17 @@ canonical names, ignore, and clear. Clearing removes every mapped ID *and* any
 ignore flag, returning the artist to unresolved so the next scan resolves it
 from scratch.
 
-`resolve` walks the unresolved artists from the last scan, showing each
+`resolve` with an artist name re-opens that artist regardless of its current
+state, searching Deezer fresh. Without it a mapped artist is unreachable: it
+resolves successfully and so never returns to the unresolved list, leaving a
+wrong choice uncorrectable through the picker.
+
+The stored unresolved and review queues are **merged, not replaced**, keyed on
+the artists a run actually covered. A full scan covers everyone and so behaves
+as a replacement; a filtered scan refreshes only its own share instead of
+discarding every other artist's pending questions. **(Invariant.)**
+
+Without an artist name, `resolve` walks the unresolved artists from the last scan, showing each
 candidate with a few album titles — those matching the local library first,
 since that is the decisive evidence. Per artist the user may select one or
 more candidates, skip (leaving it unresolved), ignore permanently, clear,

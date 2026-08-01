@@ -381,3 +381,52 @@ class TestCachingAcrossRuns:
         first = len(scanner.dz_http.requests)
         scanner.run(ScanOptions(progress=False))
         assert len(scanner.dz_http.requests) == first
+
+
+class TestQueuesSurviveFilteredScans:
+    """A single-artist rescan must not discard everyone else's pending questions."""
+
+    def test_unresolved_from_other_artists_is_kept(self, scanner):
+        scanner.store.save_unresolved(
+            [{"name": "Someone Else", "reason": "ambiguous", "candidates": []}]
+        )
+        deezer_routes(scanner.dz_http, [], {})
+        scanner.dz_http.add("/search/artist", {"data": []})
+        scanner.run(ScanOptions(progress=False, artist_filters=["Radiohead"]))
+        names = {e["name"] for e in scanner.store.load_unresolved()}
+        assert "Someone Else" in names, "another artist's entry was discarded"
+
+    def test_review_items_from_other_artists_are_kept(self, scanner):
+        scanner.store.save_review(
+            [{"id": "9", "artist": "Someone Else", "title": "T", "type": "Album",
+              "date": "2024-01-01", "reason": "unclear", "url": ""}]
+        )
+        deezer_routes(scanner.dz_http, [], {})
+        scanner.dz_http.add("/search/artist", {"data": []})
+        scanner.run(ScanOptions(progress=False, artist_filters=["Radiohead"]))
+        artists = {e["artist"] for e in scanner.store.load_review()}
+        assert "Someone Else" in artists
+
+    def test_a_rescanned_artist_gets_refreshed_not_duplicated(self, scanner):
+        scanner.store.save_unresolved(
+            [{"name": "Radiohead", "reason": "stale reason", "candidates": []}]
+        )
+        scanner.dz_http.add("/search/artist", {"data": []})
+        deezer_routes(scanner.dz_http, [], {})
+        scanner.dz_http.add("/search/artist", {"data": []})
+        scanner.run(ScanOptions(progress=False, artist_filters=["Radiohead"]))
+        entries = [e for e in scanner.store.load_unresolved() if e["name"] == "Radiohead"]
+        assert len(entries) == 1, "the stale entry should be replaced, not appended"
+        assert entries[0]["reason"] != "stale reason"
+
+    def test_a_full_scan_still_replaces_everything(self, scanner):
+        scanner.store.save_unresolved(
+            [{"name": "Radiohead", "reason": "stale", "candidates": []}]
+        )
+        deezer_routes(
+            scanner.dz_http,
+            [release_row(10, "Kid A", "2000-10-02")],
+            {"10": {"title": "Kid A", "tracks": KID_A}},
+        )
+        scanner.run(ScanOptions(progress=False))
+        assert scanner.store.load_unresolved() == []

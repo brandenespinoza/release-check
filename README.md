@@ -311,6 +311,16 @@ Algorhythm entries above share *Illusion* and *Island*. Mapping both merges
 their discographies and de-duplicates the overlap, so you get complete coverage
 without double entries.
 
+**Got one wrong?** A mapped artist never returns to the unresolved list, so
+re-open it by name:
+
+```bash
+release-check resolve "Ghost"
+```
+
+That searches Deezer fresh, shows your current mapping, and lets you pick
+again, clear it, or ignore the artist.
+
 The same things are available non-interactively:
 
 ```bash
@@ -491,7 +501,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-425 tests, no network access, no real credentials, both APIs mocked. They cover
+433 tests, no network access, no real credentials, both APIs mocked. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version
 detection, duplicate collapsing, ambiguous artist results, manual mappings,

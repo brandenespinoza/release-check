@@ -191,3 +191,35 @@ class TestDisplay:
         out = capsys.readouterr().out
         assert "Opus Eponymous" in out
         assert "Meliora" in out
+
+
+class TestReopenByName:
+    """A mapped artist never returns to the unresolved list, so it needs a way back."""
+
+    def test_named_artist_is_searched_fresh(self, store, provider, monkeypatch, capsys):
+        store.set_mapping("Ghost", [MappingTarget("1", "Ghost")])
+        provider.search_results = {"Ghost": [DeezerArtist(id="2", name="Ghost", nb_fan=2145)]}
+        provider.search_artists = lambda name, limit=6: provider.search_results.get(name, [])
+        drive(monkeypatch, ["1"])
+        assert run_resolve(store, provider, set(), only="Ghost") == ExitCode.OK
+        assert store.get_mapping("Ghost").deezer_ids == ["2"], "the wrong mapping is replaced"
+
+    def test_current_mapping_is_shown_before_choosing(self, store, provider, monkeypatch, capsys):
+        store.set_mapping("Ghost", [MappingTarget("1", "Ghost")])
+        provider.search_artists = lambda name, limit=6: []
+        drive(monkeypatch, ["s"])
+        run_resolve(store, provider, set(), only="Ghost")
+        assert "currently mapped to" in capsys.readouterr().out
+
+    def test_clear_works_on_a_named_artist(self, store, provider, monkeypatch):
+        store.set_mapping("Ghost", [MappingTarget("1", "Ghost")])
+        provider.search_artists = lambda name, limit=6: []
+        drive(monkeypatch, ["c"])
+        run_resolve(store, provider, set(), only="Ghost")
+        assert store.get_mapping("Ghost") is None
+
+    def test_works_with_an_empty_unresolved_queue(self, store, provider, monkeypatch, capsys):
+        provider.search_artists = lambda name, limit=6: []
+        drive(monkeypatch, ["s"])
+        assert run_resolve(store, provider, set(), only="Nobody") == ExitCode.OK
+        assert "Nothing to resolve" not in capsys.readouterr().out

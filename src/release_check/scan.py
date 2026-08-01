@@ -58,6 +58,20 @@ class ScanOptions:
     progress: bool = True
 
 
+def _merge_queue(
+    existing: list[dict], fresh: list[dict], scanned: set[str], key: str
+) -> list[dict]:
+    """Refresh only the entries belonging to artists this run actually covered.
+
+    Replacing the queue outright meant `--artist "X"` discarded every other
+    artist's pending questions. A full scan covers everyone, so this is
+    equivalent to a replacement in that case.
+    """
+    folded = {fold(name) for name in scanned}
+    kept = [entry for entry in existing if fold(str(entry.get(key, ""))) not in folded]
+    return kept + fresh
+
+
 @dataclass
 class Judged:
     """One release plus the verdict reached about it.
@@ -155,6 +169,9 @@ class ScanResult:
     unresolved: list[UnresolvedArtist] = field(default_factory=list)
     artists_scanned: int = 0
     partial_reasons: list[str] = field(default_factory=list)
+    #: Names actually processed this run, so a filtered scan only refreshes
+    #: its own share of the stored queues.
+    scanned_names: set[str] = field(default_factory=set)
 
 
 class Scanner:
@@ -248,6 +265,7 @@ class Scanner:
                 result.partial_reasons.append(f"{artist.name} failed")
                 outcome.failed = True
             result.artists_scanned += 1
+            result.scanned_names.add(artist.name)
 
             outcome.missing = result.missing[before[0] :]
             outcome.review = len(result.review) - before[1]
@@ -258,32 +276,36 @@ class Scanner:
         self._clear_progress(options)
 
         result.missing = dedupe_results(result.missing, lambda item: item.release_type)
+        fresh_review = [
+            {
+                "id": item.release.id,
+                "artist": item.local_artist,
+                "title": item.release.title,
+                "type": item.release_type.value,
+                "date": str(item.release.release_date),
+                "reason": item.reason,
+                "url": item.release.link,
+            }
+            for item in result.review
+        ]
+        fresh_unresolved = [
+            {
+                "name": u.name,
+                "reason": u.reason,
+                "candidates": [
+                    {"id": c.id, "name": c.name, "fans": c.nb_fan}
+                    for c in u.candidates
+                ],
+            }
+            for u in result.unresolved
+        ]
         self.store.save_review(
-            [
-                {
-                    "id": item.release.id,
-                    "artist": item.local_artist,
-                    "title": item.release.title,
-                    "type": item.release_type.value,
-                    "date": str(item.release.release_date),
-                    "reason": item.reason,
-                    "url": item.release.link,
-                }
-                for item in result.review
-            ]
+            _merge_queue(self.store.load_review(), fresh_review, result.scanned_names, "artist")
         )
         self.store.save_unresolved(
-            [
-                {
-                    "name": u.name,
-                    "reason": u.reason,
-                    "candidates": [
-                        {"id": c.id, "name": c.name, "fans": c.nb_fan}
-                        for c in u.candidates
-                    ],
-                }
-                for u in result.unresolved
-            ]
+            _merge_queue(
+                self.store.load_unresolved(), fresh_unresolved, result.scanned_names, "name"
+            )
         )
         return result
 

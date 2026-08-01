@@ -105,8 +105,39 @@ def _parse_selection(answer: str, count: int) -> list[int] | None:
     return picks
 
 
-def run_resolve(store: Store, provider: DeezerProvider, local_albums: set[str]) -> int:
-    """Walk the unresolved artists from the last scan. Returns an exit code."""
+def entry_for_artist(provider: DeezerProvider, name: str) -> dict:
+    """Build a picker entry for any artist, searching Deezer fresh.
+
+    Needed because a mapped artist never appears in the unresolved list again,
+    so without this there is no way back to the picker after a wrong choice.
+    """
+    try:
+        found = provider.search_artists(name, limit=MAX_SHOWN)
+    except ReleaseCheckError as exc:
+        found = []
+        reason = f"could not search Deezer: {exc}"
+    else:
+        reason = (
+            f"{len(found)} Deezer artist(s) match this name"
+            if found
+            else "no Deezer artist matches this name"
+        )
+    return {
+        "name": name,
+        "reason": reason,
+        "candidates": [
+            {"id": a.id, "name": a.name, "fans": a.nb_fan} for a in found
+        ],
+    }
+
+
+def run_resolve(
+    store: Store,
+    provider: DeezerProvider,
+    local_albums: set[str],
+    only: str | None = None,
+) -> int:
+    """Walk unresolved artists, or re-open one by name. Returns an exit code."""
     if not sys.stdin.isatty():
         print(
             "error: resolve needs an interactive terminal.",
@@ -118,12 +149,18 @@ def run_resolve(store: Store, provider: DeezerProvider, local_albums: set[str]) 
         )
         return ExitCode.CONFIG
 
-    unresolved = store.load_unresolved()
-    if not unresolved:
-        print("Nothing to resolve. Run a scan first.")
-        return ExitCode.OK
+    if only:
+        unresolved = [entry_for_artist(provider, only)]
+        existing = store.get_mapping(only)
+        if existing is not None:
+            print(f"{only} is currently mapped to: {existing.describe()}")
+    else:
+        unresolved = store.load_unresolved()
+        if not unresolved:
+            print("Nothing to resolve. Run a scan first.")
+            return ExitCode.OK
+        print(f"{len(unresolved)} unresolved artist(s) from the last scan.")
 
-    print(f"{len(unresolved)} unresolved artist(s) from the last scan.")
     print("Press Enter to leave an artist as it is.")
 
     changed = 0

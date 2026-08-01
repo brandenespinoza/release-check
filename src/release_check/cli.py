@@ -173,10 +173,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="decide on ambiguous releases so they stop being reported",
     )
 
-    sub.add_parser(
+    resolver = sub.add_parser(
         "resolve",
         parents=[common],
-        help="work through unresolved artists interactively",
+        help="work through unresolved artists, or re-open one by name",
+    )
+    resolver.add_argument(
+        "artist",
+        nargs="?",
+        default=None,
+        metavar="ARTIST",
+        help="re-open this artist even if it is already mapped",
     )
 
     artists = sub.add_parser(
@@ -512,7 +519,7 @@ def cmd_resolve(args) -> int:
                     local_albums.add(base)
         except ReleaseCheckError as exc:
             log.info("Could not read local albums for comparison: %s", exc)
-        return run_resolve(store, provider, local_albums)
+        return run_resolve(store, provider, local_albums, only=args.artist)
 
 
 def cmd_artists(args) -> int:
