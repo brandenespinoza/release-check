@@ -326,7 +326,7 @@ class TestInvocationName:
             sys.stderr,
         )
         err = capsys.readouterr().err
-        assert "release-check resolve" in err
+        assert "release-check fix" in err
         assert 'release-check map "<artist>" <id>' in err
         assert "release_check map" not in err, "the underscore form is not a command"
 

@@ -19,7 +19,9 @@ class TestDefaultCommand:
             (["--refresh"], "scan"),
             (["scan"], "scan"),
             (["check"], "check"),
-            (["artists"], "artists"),
+            (["status"], "status"),
+            (["fix"], "fix"),
+            (["artists"], "artists"),  # legacy spelling still routes
             (["map", "Ghost", "42"], "map"),
         ],
     )
@@ -119,8 +121,8 @@ class TestStateCommands:
         assert main(["cache", *env]) == ExitCode.OK
         assert "State file" in capsys.readouterr().out
 
-    def test_artists_without_a_scan_is_graceful(self, tmp_path, monkeypatch, capsys):
+    def test_status_without_a_scan_is_graceful(self, tmp_path, monkeypatch, capsys):
         env = self._env(tmp_path, monkeypatch)
-        assert main(["artists", *env]) == ExitCode.OK
-        assert "No unresolved artists" in capsys.readouterr().out
+        assert main(["status", *env]) == ExitCode.OK
+        assert "No scan recorded yet" in capsys.readouterr().out
 

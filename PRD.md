@@ -118,13 +118,18 @@ name.
 | `setup` | Guided setup: collect settings, test the connection, save |
 | `config` | shows every setting and its source; `set`, `unset`, `password`, `path` |
 | `check` | Validate connectivity and credentials, then exit |
-| `resolve [artist]` | Work through unresolved artists, or re-open one by name |
-| `review [id\|url]` | Decide on ambiguous releases, or on any one release by id |
-| `artists` | Show unresolved artists from the last scan; `--mappings` lists saved mappings |
+| `status` | What the last scan could not settle; `--decided` lists every saved answer |
+| `fix [artist]` | Walk those questions — artists then releases — or re-open one artist |
+| `fix --album <id\|url>` | Decide on one release: `--own`, `--missing`, `--clear` |
 | `map <local> <id>...` | Pin a local artist to one or more Deezer artists |
 | `unmap <local>` | Clear everything known about an artist, back to unresolved |
-| `ignore <local>` | Never report releases for this local artist |
-| `cache` | Show state location, age and entry counts by expiry class; `--clear`, `--reset-mappings` |
+| `block --artist <name\|id\|url>` | Never report releases for this artist; `unblock` undoes it |
+| `block --album <id\|url>` | Never report this one release; `unblock --album` undoes it |
+| `cache` | Show state location, age and entry counts by expiry class; `--clear`, `--reset-mappings`, `--reset-decisions` |
+
+`resolve`, `review` and `artists` are still accepted as the earlier names for
+`fix` and `status`, but are not advertised: splitting the same task by what it
+acted on meant knowing which command applied before you could start.
 
 Scan flags: `--artist NAME` (repeatable), `--limit N`, `--since YEAR`,
 `--type TYPE` (repeatable), `--flat`, `--refresh`, `--no-progress`.

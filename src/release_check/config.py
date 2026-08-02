@@ -375,7 +375,7 @@ def load_config(
     """Build a validated Config from the environment and an optional .env.
 
     Commands that only read the local state file — listing mappings, recording
-    an ignore, inspecting the cache — pass ``require_navidrome=False``. They
+    a block, inspecting the cache — pass ``require_navidrome=False``. They
     genuinely do not need credentials, and refusing to run without them was
     just an artefact of every command sharing one loader. The resulting Config
     records what was missing in `missing_navidrome`, so anything that later

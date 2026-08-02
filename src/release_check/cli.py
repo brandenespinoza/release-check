@@ -1,8 +1,8 @@
 """Command-line interface.
 
-A bare invocation runs a scan. The extra subcommands exist only for the tasks
-the PRD calls out — resolving artists, inspecting state and clearing it — and
-deliberately stop there.
+A bare invocation runs a scan. Everything else follows from what a scan leaves
+behind: `status` says what it could not settle, `fix` walks those questions,
+and `map` / `block` answer them directly when you already know the answer.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import argparse
 import logging
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 from . import __version__
@@ -48,9 +49,15 @@ from .state import MappingTarget, Store
 log = logging.getLogger("release_check.cli")
 
 SUBCOMMANDS = {
-    "scan", "setup", "config", "check", "resolve", "review", "artists", "map",
+    "scan", "setup", "config", "check", "fix", "status", "map",
     "unmap", "block", "unblock", "cache",
 }
+
+#: Earlier spellings, still accepted but no longer advertised. `resolve` and
+#: `review` were one command split by what it acted on, which meant knowing
+#: which of them applied before you could start; `artists` was the read-only
+#: half of `resolve` with no equivalent for `review`.
+LEGACY_COMMANDS = {"resolve", "review", "artists"}
 
 _TYPE_ALIASES = {
     "album": ReleaseType.ALBUM,
@@ -167,61 +174,61 @@ def build_parser() -> argparse.ArgumentParser:
         help="verify Navidrome connectivity and credentials, then exit",
     )
 
-    reviewer = sub.add_parser(
-        "review",
-        parents=[common],
-        help="decide on releases so they stop being reported",
+    status = sub.add_parser(
+        "status", parents=[common], help="what needs your attention, and what you have decided"
     )
-    reviewer.add_argument(
+    status.add_argument(
+        "--decided",
+        action="store_true",
+        help="list saved mappings, blocks and release decisions",
+    )
+
+    fixer = sub.add_parser(
+        "fix",
+        parents=[common],
+        help="answer the questions the last scan could not settle",
+    )
+    fixer.add_argument(
         "target",
         nargs="?",
         default=None,
-        metavar="ID_OR_URL",
+        metavar="ARTIST",
+        help="shorthand for --artist",
+    )
+    subject = fixer.add_mutually_exclusive_group()
+    subject.add_argument(
+        "--artist",
+        metavar="NAME",
+        help="re-open one artist, even if it is already mapped",
+    )
+    subject.add_argument(
+        "--album",
+        metavar="ID|URL",
         help="a Deezer album id or URL from the results list",
     )
-    decision_group = reviewer.add_mutually_exclusive_group()
+    decision_group = fixer.add_mutually_exclusive_group()
     decision_group.add_argument(
         "--own",
         dest="decision",
         action="store_const",
         const="owned",
-        help="I have this release; stop reporting it",
+        help="with --album: I have this release; stop reporting it",
     )
     decision_group.add_argument(
         "--missing",
         dest="decision",
         action="store_const",
         const="missing",
-        help="I do not have it; always report it",
+        help="with --album: I do not have it; always report it",
     )
     decision_group.add_argument(
         "--clear",
         dest="decision",
         action="store_const",
         const="clear",
-        help="forget a previous decision about it",
+        help="with --album: forget a previous decision about it",
     )
-    reviewer.set_defaults(decision=None)
-
-    resolver = sub.add_parser(
-        "resolve",
-        parents=[common],
-        help="work through unresolved artists, or re-open one by name",
-    )
-    resolver.add_argument(
-        "artist",
-        nargs="?",
-        default=None,
-        metavar="ARTIST",
-        help="re-open this artist even if it is already mapped",
-    )
-
-    artists = sub.add_parser(
-        "artists", parents=[common], help="show unresolved artists and manual mappings"
-    )
-    artists.add_argument(
-        "--mappings", action="store_true", help="list saved mappings instead"
-    )
+    fixer.set_defaults(decision=None)
 
     mapper = sub.add_parser(
         "map",
@@ -296,6 +303,30 @@ def _parse_since(text: str) -> ReleaseDate:
 _VALUE_FLAGS = {"--env-file", "--artist", "--limit", "--since", "--type"}
 
 
+def _apply_aliases(argv: list[str]) -> list[str]:
+    """Rewrite the old command names onto the current ones.
+
+    Done here rather than with argparse aliases because the old commands had
+    different argument shapes: `review 558123` named a release positionally,
+    where `fix` reserves the positional for an artist.
+    """
+    if not argv or argv[0] not in LEGACY_COMMANDS:
+        return argv
+
+    command, rest = argv[0], argv[1:]
+
+    if command == "artists":
+        return ["status", *("--decided" if a == "--mappings" else a for a in rest)]
+
+    if command == "resolve":
+        return ["fix", *rest]
+
+    # `review <id>` targeted a release; a bare `review` walked the queue.
+    if rest and not rest[0].startswith("-"):
+        return ["fix", "--album", *rest]
+    return ["fix", *rest]
+
+
 def _insert_default_command(argv: list[str]) -> list[str]:
     """Make a bare invocation, or one with only flags, mean `scan`."""
     skip_next = False
@@ -309,7 +340,8 @@ def _insert_default_command(argv: list[str]) -> list[str]:
             if token in _VALUE_FLAGS:
                 skip_next = True
             continue
-        return argv if token in SUBCOMMANDS else ["scan", *argv]
+        known = SUBCOMMANDS | LEGACY_COMMANDS
+        return argv if token in known else ["scan", *argv]
     return ["scan", *argv]
 
 
@@ -332,7 +364,7 @@ def _make_clients(config: Config, store: Store, refresh: bool):
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
-    args = parser.parse_args(_insert_default_command(argv))
+    args = parser.parse_args(_insert_default_command(_apply_aliases(argv)))
     # Restore the defaults that SUPPRESS omitted.
     args.verbose = getattr(args, "verbose", 0)
     args.env_file = getattr(args, "env_file", None)
@@ -348,12 +380,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_config(args)
         if command == "check":
             return cmd_check(args)
-        if command == "resolve":
-            return cmd_resolve(args)
-        if command == "review":
-            return cmd_review(args)
-        if command == "artists":
-            return cmd_artists(args)
+        if command == "fix":
+            return cmd_fix(args)
+        if command == "status":
+            return cmd_status(args)
         if command == "map":
             return cmd_map(args)
         if command == "unmap":
@@ -563,82 +593,164 @@ def cmd_check(args) -> int:
     return ExitCode.OK
 
 
-def cmd_review(args) -> int:
+def _local_album_titles(config: Config, store: Store) -> tuple[set[str], object]:
+    """Album titles you own, for the artist picker, plus a Deezer client.
+
+    The titles are an aid, not a requirement: they let the picker put the
+    decisive evidence first — "which Ghost is mine" is answerable from a track
+    listing. Without a configured server the picker still works.
+    """
+    if not config.has_navidrome:
+        return set(), _deezer_only(config, store)
+
+    client, provider = _make_clients(config, store, refresh=False)
+    titles: set[str] = set()
+    try:
+        from .normalize import parse_title
+
+        for album in client.get_all_albums():
+            base = parse_title(album.name).base
+            if base:
+                titles.add(base)
+    except ReleaseCheckError as exc:
+        log.info("Could not read local albums for comparison: %s", exc)
+    return titles, provider
+
+
+def cmd_fix(args) -> int:
+    """Answer whatever the last scan could not settle.
+
+    One command for both kinds of question, because having to know whether a
+    problem was an artist problem or a release problem before choosing a
+    command was the wrong thing to ask of anyone.
+    """
+    from .resolve_ui import run_resolve
     from .review_ui import decide_one, run_review
 
+    artist = args.artist or args.target
+    if artist and args.album:
+        print("error: give either an artist or --album, not both.", file=sys.stderr)
+        return ExitCode.USAGE
+    if args.decision and not args.album:
+        print(
+            "error: --own/--missing/--clear apply to a release, so they need "
+            "--album <id or URL>.",
+            file=sys.stderr,
+        )
+        return ExitCode.USAGE
+
     config = _load(args)
     with _open_store(config) as store:
-        if args.target:
+        if args.album:
             return decide_one(
-                store, _deezer_only(config, store), args.target, args.decision
+                store, _deezer_only(config, store), args.album, args.decision
             )
-        if args.decision:
-            print(
-                "error: --own/--missing/--clear need a release id or URL.",
-                file=sys.stderr,
-            )
-            return ExitCode.USAGE
-        return run_review(store)
 
+        if artist:
+            local_albums, provider = _local_album_titles(config, store)
+            return run_resolve(store, provider, local_albums, only=artist)
 
-def cmd_resolve(args) -> int:
-    from .resolve_ui import run_resolve
-
-    config = _load(args)
-    with _open_store(config) as store:
-        # Local album titles let the picker highlight the decisive evidence.
-        # They are an aid, not a requirement: without a configured server the
-        # picker still works, it just cannot point out the titles you own.
-        local_albums: set[str] = set()
-        if config.has_navidrome:
-            client, provider = _make_clients(config, store, refresh=False)
-            try:
-                from .normalize import parse_title
-
-                for album in client.get_all_albums():
-                    base = parse_title(album.name).base
-                    if base:
-                        local_albums.add(base)
-            except ReleaseCheckError as exc:
-                log.info("Could not read local albums for comparison: %s", exc)
-        else:
-            provider = _deezer_only(config, store)
-        return run_resolve(store, provider, local_albums, only=args.artist)
-
-
-def cmd_artists(args) -> int:
-    config = _load(args)
-    with _open_store(config) as store:
-        if args.mappings:
-            mappings = store.list_mappings()
-            if not mappings:
-                print("No saved artist mappings.")
-                return ExitCode.OK
-            width = max(len(m.local_name) for m in mappings)
-            for mapping in mappings:
-                print(f"{mapping.local_name:<{width}}  ->  {mapping.describe()}")
+        artists_pending = store.load_unresolved()
+        releases_pending = store.load_review()
+        if not artists_pending and not releases_pending:
+            print(f"Nothing to fix. Run `{invocation_name()}` to scan first.")
             return ExitCode.OK
 
-        unresolved = store.load_unresolved()
+        code = ExitCode.OK
+        if artists_pending:
+            local_albums, provider = _local_album_titles(config, store)
+            code = run_resolve(store, provider, local_albums)
+            if code != ExitCode.OK:
+                return code
+        if releases_pending:
+            if artists_pending:
+                print("\n─── releases ───")
+            code = run_review(store)
+        return code
 
-    if not unresolved:
-        print("No unresolved artists recorded. Run a scan first.")
+
+def cmd_status(args) -> int:
+    from .review_ui import describe_release
+
+    config = _load(args)
+    program = invocation_name()
+    with _open_store(config) as store:
+        unresolved = store.load_unresolved()
+        review = store.load_review()
+        mappings = store.list_mappings()
+        decisions = store.release_decisions()
+
+        if args.decided:
+            # The provider serves album metadata from the same store, so this
+            # only reaches the network for a release never looked up before —
+            # worth it, since a bare id does not tell you what you decided on.
+            provider = _deezer_only(config, store) if decisions else None
+            return _print_decided(store, provider, mappings, decisions, describe_release)
+
+    blocked = [m for m in mappings if m.is_blocked]
+    mapped = [m for m in mappings if not m.is_blocked]
+
+    if unresolved or review:
+        print("Needs you")
+        if unresolved:
+            print(f"  {len(unresolved)} artist(s) could not be matched to Deezer")
+        if review:
+            print(f"  {len(review)} release(s) need a decision")
+        print(f"\n  Work through them:  {program} fix")
+    elif mappings or decisions:
+        print("Nothing pending.")
+    else:
+        print(f"No scan recorded yet. Run `{program}`.")
         return ExitCode.OK
 
-    print(f"{len(unresolved)} unresolved artist(s) from the last scan:\n")
-    for entry in unresolved:
-        print(f"{entry['name']}: {entry['reason']}")
-        for candidate in entry.get("candidates", [])[:5]:
-            print(
-                f"    {candidate['name']}  deezer id {candidate['id']}  "
-                f"({candidate['fans']:,} fans)"
-            )
+    if mappings or decisions:
+        print("\nSaved")
+        if mapped:
+            print(f"  {len(mapped)} artist mapping(s)")
+        if blocked:
+            print(f"  {len(blocked)} blocked artist(s)")
+        if decisions:
+            counts = Counter(decisions.values())
+            detail = ", ".join(f"{n} {name}" for name, n in sorted(counts.items()))
+            print(f"  {len(decisions)} release decision(s): {detail}")
+        print(f"\n  List them:  {program} status --decided")
+
+    return ExitCode.OK
+
+
+def _print_decided(store: Store, provider, mappings, decisions, describe_release) -> int:
+    """Everything you have told it, so a wrong answer can be found and undone."""
     program = invocation_name()
-    print(
-        f"\nWork through these interactively:  {program} resolve"
-        f'\nOr set one directly:               {program} map "<artist>" <id> [<id> ...]'
-        f'\nOr skip one:                       {program} block --artist "<artist>"'
-    )
+    if not mappings and not decisions:
+        print("Nothing decided yet.")
+        return ExitCode.OK
+
+    mapped = [m for m in mappings if not m.is_blocked]
+    blocked = [m for m in mappings if m.is_blocked]
+
+    if mapped:
+        width = max(len(m.local_name) for m in mapped)
+        print(f"Artist mappings ({len(mapped)})")
+        for mapping in mapped:
+            print(f"  {mapping.local_name:<{width}}  ->  {mapping.describe()}")
+        print(f'\n  Undo one:  {program} unmap "<artist>"\n')
+
+    if blocked:
+        print(f"Blocked artists ({len(blocked)})")
+        for mapping in blocked:
+            print(f"  {mapping.local_name}")
+        print(f'\n  Undo one:  {program} unblock --artist "<artist>"\n')
+
+    if decisions:
+        print(f"Release decisions ({len(decisions)})")
+        for release_id, decision in sorted(decisions.items()):
+            entry = describe_release(store, provider, release_id)
+            artist = entry.get("artist")
+            label = f"{artist} — {entry['title']}" if artist else entry["title"]
+            print(f"  {decision:<8}  {label}")
+            print(f"            {entry['url']}")
+        print(f"\n  Undo one:  {program} fix --album <id> --clear")
+
     return ExitCode.OK
 
 

@@ -142,7 +142,7 @@ class ArtistResolver:
         mapping = self.store.get_mapping(local.name)
         if mapping is not None:
             if mapping.status == STATUS_BLOCKED:
-                return ArtistResolution(local, Resolution.IGNORED, reason="ignored by user")
+                return ArtistResolution(local, Resolution.IGNORED, reason="blocked by you")
             if mapping.targets:
                 return self._resolve_from_mapping(local, mapping)
 

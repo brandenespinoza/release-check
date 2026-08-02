@@ -20,13 +20,13 @@ thing.
 | List releases I don't own | `release-check` |
 | List only recent ones | `release-check --since 2024-01` |
 | List only albums | `release-check --type album` |
-| Fix an artist matched to the wrong Deezer artist | `release-check resolve "<artist>"` |
-| Work through artists the scan couldn't match | `release-check resolve` |
-| Answer the "needs review" section from the last scan | `release-check review` |
-| Dismiss one album from the results | `release-check block --album <url>` |
+| **See what needs my attention** | `release-check status` |
+| **Answer it** | `release-check fix` |
+| See what I've already decided | `release-check status --decided` |
+| Fix one artist matched to the wrong Deezer artist | `release-check fix "<artist>"` |
 | Never report an artist again | `release-check block --artist "<artist>"` |
-| Undo a block | `release-check unblock --artist "<artist>"` |
-| See what I've mapped and blocked | `release-check artists --mappings` |
+| Dismiss one release from the results | `release-check block --album <url>` |
+| Undo a block | `release-check unblock --artist \|--album <x>` |
 | Force fresh data from Deezer | `release-check --refresh` |
 
 ---
@@ -115,8 +115,8 @@ release-check --limit 20 --type album
 | `--flat` | One continuous list sorted by date, without release-type groups. |
 | `--no-progress` | Suppress the progress line. |
 
-Output is written to stdout in three parts: the results, a summary, and — on
-stderr — the "needs review" and "unresolved artists" sections. Piping to a file
+Output is written to stdout in two parts: the results and a summary. The
+"needs review" and "unresolved artists" sections go to stderr. Piping to a file
 therefore captures the results and leaves the follow-up prompts on your
 terminal.
 
@@ -125,27 +125,56 @@ re-run resumes cheaply.
 
 ---
 
-## Correcting the results
+## Answering what the scan couldn't
 
-Three different things can be wrong with a scan, and each has its own command.
+A scan produces two kinds of "I don't know":
 
-### The artist is wrong — `resolve`, `map`, `unmap`, `block`
+1. **Which Deezer artist is your "Ghost"?** There are six. It won't guess.
+2. **Do you already own this release?** The title nearly matches something you
+   have, but not quite.
+
+`status` tells you how many of each are outstanding. `fix` walks them.
+
+### `status`
 
 ```bash
-release-check resolve                     # walk everything the scan couldn't match
-release-check resolve "Ghost"             # re-open one artist, even if already mapped
-release-check map "Ghost" 1160651 4859761 # set it directly, no prompts
-release-check unmap "Ghost"               # forget everything about this artist
-release-check block --artist "Karaoke Hits Vol 3"   # never report this artist
-release-check block --artist 1160651               # ...or name it by Deezer id
-release-check unblock --artist "Karaoke Hits Vol 3" # undo
-release-check artists                     # list what's unresolved
-release-check artists --mappings          # list what's mapped or blocked
+release-check status              # what needs you, and a summary of what's saved
+release-check status --decided    # every mapping, block and release decision
 ```
 
-`resolve` is interactive. For each artist it shows up to six Deezer candidates
-with a few of their album titles — titles you already own are listed first,
-because that's what actually identifies the right artist. At the prompt:
+```text
+Needs you
+  5 artist(s) could not be matched to Deezer
+  3 release(s) need a decision
+
+  Work through them:  release-check fix
+
+Saved
+  12 artist mapping(s)
+  3 blocked artist(s)
+  7 release decision(s): 2 blocked, 4 owned, 1 missing
+
+  List them:  release-check status --decided
+```
+
+`--decided` is where you go to find a wrong answer and undo it. It lists
+mappings, blocked artists and release decisions separately, each with the
+command that reverses it. Release titles are looked up from cache; only a
+release never seen before costs a request.
+
+### `fix`
+
+```bash
+release-check fix                        # walk everything pending
+release-check fix "Ghost"                # re-open one artist, even if mapped
+release-check fix --album 558123 --own   # answer one release, no prompts
+```
+
+A bare `fix` walks the artists first, then the releases. Both need a terminal.
+
+**For each artist** it shows up to six Deezer candidates with a few of their
+album titles — titles you already own are listed first, because that's what
+actually identifies the right artist.
 
 | Key | Action |
 |---|---|
@@ -155,6 +184,36 @@ because that's what actually identifies the right artist. At the prompt:
 | `b` | Block this artist. |
 | `c` | Clear what's stored, resolve from scratch next scan. |
 | `q` | Quit. |
+
+Deezer routinely splits one act across duplicate artist entries, each holding
+part of the catalogue — that's why several can be selected at once.
+
+**For each release** it shows the release and why it couldn't be settled.
+
+| Key | Action |
+|---|---|
+| `o` | I own it. Stop reporting it. |
+| `m` | I don't. Always report it. |
+| `s` or Enter | Skip, leave undecided. |
+| `u` | Undo a decision made earlier. |
+| `q` | Quit. |
+
+Non-interactively, `fix --album <id|URL>` takes `--own`, `--missing` or
+`--clear`. Copy the URL straight from the results list.
+
+### Answering directly — `map`, `unmap`, `block`, `unblock`
+
+When you already know the answer, skip the prompts.
+
+```bash
+release-check map "Ghost" 1160651 4859761          # several are merged
+release-check unmap "Ghost"                        # forget everything, back to unresolved
+
+release-check block --artist "Karaoke Hits Vol 3"  # never report this artist
+release-check block --artist 1160651               # ...or name it by Deezer id
+release-check block --album 558123                 # one release, any type
+release-check unblock --artist "..." | --album 558123
+```
 
 `block --artist` accepts three spellings of the same artist: the **local name**
 as it appears in your Navidrome library, a **Deezer artist id**, or a **Deezer
@@ -172,38 +231,32 @@ rather than blocked it says so and leaves the mapping alone. `unmap` is the
 bigger hammer — it clears mappings *and* blocks, returning the artist to
 unresolved.
 
-### One release is wrong — `block --album`, `review`
-
-```bash
-release-check block --album 558123              # don't report this, whatever it is
-release-check block --album https://deezer.com/album/558123
-release-check unblock --album 558123            # undo
-
-release-check review                            # walk the review queue interactively
-release-check review 558123 --own               # I have it; stop reporting it
-release-check review 558123 --missing           # I don't have it; always report it
-release-check review 558123 --clear             # forget the decision
-```
-
-Both take a **Deezer album ID or URL** — copy it straight from the results
-list. `--album` covers every release type: albums, EPs and singles are all
-albums to Deezer, and to this flag.
-
-`block --album` and `review --own` both stop a release being reported, and they
-are deliberately different: `--own` records a claim about your library, `block`
-records only that you don't want to hear about it. `unblock --album` clears
-either one.
-
-A recorded decision beats the matcher outright and is never re-litigated.
-Interactive review keys: `o` own, `m` missing, `s`/Enter skip, `u` undo, `q` quit.
-
 ### Which suppression to use
 
 | | Scope | Identified by | Undo |
 |---|---|---|---|
 | `block --artist X` | every release by that artist, forever | local name, Deezer id, or Deezer URL | `unblock --artist X` |
 | `block --album X` | one release | Deezer album id or URL | `unblock --album X` |
-| `review X --own` | one release, as *owned* | Deezer album id or URL | `review X --clear` |
+| `fix --album X --own` | one release, as *owned* | Deezer album id or URL | `fix --album X --clear` |
+
+`block --album` and `--own` both stop a release being reported, and they are
+deliberately different: `--own` records a claim about your library, `block`
+records only that you don't want to hear about it. `unblock --album` clears
+either one.
+
+### Older command names
+
+`resolve`, `review` and `artists` still work and always will — they map onto
+the commands above. They are no longer listed in `--help`.
+
+| Old | Now |
+|---|---|
+| `resolve` | `fix` |
+| `resolve "Ghost"` | `fix "Ghost"` |
+| `review` | `fix` |
+| `review 558123 --own` | `fix --album 558123 --own` |
+| `artists` | `status` |
+| `artists --mappings` | `status --decided` |
 
 ---
 
@@ -251,12 +304,12 @@ immediate and unconfirmed, and there is no undo.
 ## What needs a Navidrome server
 
 Only `scan` and `check` talk to Navidrome, and only they require credentials.
-`resolve` uses them if present — the picker highlights candidates whose album
+`fix` uses them if present — the artist picker highlights candidates whose album
 titles you already own — but works without.
 
 Everything else reads and writes the local state file, or talks to Deezer, whose
-public API needs no credentials at all: `artists`, `cache`, `block`, `unblock`,
-`map`, `unmap`, `review`, and `config`.
+public API needs no credentials at all: `status`, `cache`, `block`, `unblock`,
+`map`, `unmap`, and `config`.
 
 ---
 

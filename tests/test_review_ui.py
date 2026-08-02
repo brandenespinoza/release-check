@@ -160,7 +160,7 @@ class TestDecideOneRelease:
 
         assert decide_one(store, self._provider(), "558123", "owned") == ExitCode.OK
         assert store.release_decisions() == {"558123": DECISION_OWNED}
-        assert "Ignoring Alabama — American Christmas" in capsys.readouterr().out
+        assert "Marked Alabama — American Christmas as owned" in capsys.readouterr().out
 
     def test_own_by_url_from_the_results_list(self, store):
         from release_check.review_ui import decide_one

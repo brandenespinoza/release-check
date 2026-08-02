@@ -97,7 +97,7 @@ def decide_one(
     if decision is not None:
         store.set_release_decision(release_id, decision)
         if decision == DECISION_OWNED:
-            print(f"Ignoring {label}. It will not be reported again.")
+            print(f"Marked {label} as owned. It will not be reported again.")
         else:
             print(f"{label} will be reported as missing.")
         return ExitCode.OK
@@ -105,7 +105,7 @@ def decide_one(
     if not sys.stdin.isatty():
         print("error: deciding interactively needs a terminal.", file=sys.stderr)
         print(
-            f"  Use `{invocation_name()} review {release_id} --own` instead.",
+            f"  Use `{invocation_name()} fix --album {release_id} --own` instead.",
             file=sys.stderr,
         )
         return ExitCode.CONFIG

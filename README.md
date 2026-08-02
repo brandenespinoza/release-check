@@ -255,25 +255,32 @@ release-check cache --reset-mappings # drop artist mappings
 Clearing the cache never deletes your manual mappings, and a failed refresh
 never discards data that is already cached.
 
-### Resolving ambiguous artists
+### What a scan leaves for you
 
-Artists that cannot be matched confidently are listed after a scan and never
-guessed at. To see them again:
+A scan produces two kinds of "I don't know": *which Deezer artist is your
+"Ghost"* — there are six — and *do you already own this release*. It never
+guesses at either.
 
 ```bash
-release-check artists
+release-check status
 ```
 
 ```text
-Ghost: several Deezer artists share this name and none matches the local albums
-    Ghost  deezer id 1160651  (1,234,567 fans)
-    Ghost  deezer id 4859761  (2,145 fans)
+Needs you
+  5 artist(s) could not be matched to Deezer
+  3 release(s) need a decision
+
+  Work through them:  release-check fix
 ```
 
-Work through them interactively:
+`release-check fix` walks both piles in order: artists first, then releases.
+`release-check status --decided` lists everything you have already answered,
+each with the command that reverses it.
+
+#### Artists
 
 ```bash
-release-check resolve
+release-check fix
 ```
 
 ```text
@@ -287,7 +294,7 @@ Algorhythm
        Illusion
        Make It Last
        Island
-  number(s) to map  [s]kip  [i]gnore  [d] enter an id or URL  [q]uit
+  number(s) to map  [s]kip  [b]lock  [d] enter an id or URL  [q]uit
   >
 ```
 
@@ -317,7 +324,7 @@ without double entries.
 re-open it by name:
 
 ```bash
-release-check resolve "Ghost"
+release-check fix "Ghost"
 ```
 
 That searches Deezer fresh, shows your current mapping, and lets you pick
@@ -330,19 +337,19 @@ release-check map "Ghost" 1160651              # one
 release-check map "Ghost" 1160651 4859761      # several, merged
 release-check block --artist "Karaoke Hits Vol 3"
 release-check unmap "Ghost"                    # clear, back to unresolved
-release-check artists --mappings               # list what is saved
+release-check status --decided                 # list what is saved
 ```
 
 Mappings persist between runs and always win over automatic matching. A normal
 scan is never interactive.
 
-### Deciding on ambiguous releases
+#### Releases
 
 Releases the matcher cannot settle go to a review section rather than being
-claimed as missing. Answer them once:
+claimed as missing. `fix` reaches them after the artists:
 
 ```bash
-release-check review
+release-check fix
 ```
 
 ```text
@@ -373,16 +380,18 @@ release-check unblock --album 558123          # undo
 Blocking Alabama — American Christmas. It will not be reported again.
 ```
 
-That works for any release type — album, EP or single. Use `review --own`
-instead when you actually own the release: both suppress it, but only `--own`
-records a claim about your library.
+That works for any release type — album, EP or single.
 
-| | |
-|---|---|
-| `--own` | I have it; stop reporting it |
-| `--missing` | I don't have it; always report it |
-| `--clear` | forget the decision, judge it normally again |
+Use `fix --album` instead when you want to record what you actually know about
+the release rather than just muting it:
 
+```bash
+release-check fix --album 558123 --own       # I have it; stop reporting it
+release-check fix --album 558123 --missing   # I don't; always report it
+release-check fix --album 558123 --clear     # forget the decision
+```
+
+Both suppress a release, but only `--own` records a claim about your library.
 Without a flag it shows the release and prompts. `release-check cache
 --reset-decisions` forgets all of them.
 
